@@ -26,28 +26,27 @@ def main():
     test = []
 
     for row in data:
+        if len(row) != 4:
+            continue
         topic = row[1]
         data_by_topic[topic].append(row)
 
     for topic, contexts in data_by_topic.items():
         random.shuffle(contexts)
         n_context = len(contexts)
-        train.extend(contexts[:int(0.8*n_context)])
-        dev.extend(contexts[int(0.8*n_context):int(0.9*n_context)])
-        test.extend(contexts[int(0.9*n_context):])
+        train.extend(contexts[:int(3/8*n_context)])
+        dev.extend(contexts[int(3/8*n_context):int(4/8*n_context)])
+        test.extend(contexts[int(4/8*n_context):])
 
     fdir = '/'.join(args.file.split('/')[:-1])
 
     with open(f'{fdir}/train.tsv', 'w') as f:
-        f.write('"'+'"\t"'.join(header)+'"\n')
         for row in train:
             f.write('"'+'"\t"'.join(row)+'"\n')
     with open(f'{fdir}/dev.tsv', 'w') as f:
-        f.write('"'+'"\t"'.join(header)+'"\n')
         for row in dev:
             f.write('"'+'"\t"'.join(row)+'"\n')
     with open(f'{fdir}/test.tsv', 'w') as f:
-        f.write('"'+'"\t"'.join(header)+'"\n')
         for row in test:
             f.write('"'+'"\t"'.join(row)+'"\n')
 
