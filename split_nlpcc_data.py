@@ -36,17 +36,17 @@ def main():
         dev.extend(contexts[int(0.8*n_context):int(0.9*n_context)])
         test.extend(contexts[int(0.9*n_context):])
 
-    fname_wo_ext = '.'.join(args.file.split('.')[:-1])
+    fdir = '/'.join(args.file.split('/')[:-1])
 
-    with open(f'{fname_wo_ext}-train.tsv', 'w') as f:
+    with open(f'{fdir}/train.tsv', 'w') as f:
         f.write('"'+'"\t"'.join(header)+'"\n')
         for row in train:
             f.write('"'+'"\t"'.join(row)+'"\n')
-    with open(f'{fname_wo_ext}-dev.tsv', 'w') as f:
+    with open(f'{fdir}/dev.tsv', 'w') as f:
         f.write('"'+'"\t"'.join(header)+'"\n')
         for row in dev:
             f.write('"'+'"\t"'.join(row)+'"\n')
-    with open(f'{fname_wo_ext}-test.tsv', 'w') as f:
+    with open(f'{fdir}/test.tsv', 'w') as f:
         f.write('"'+'"\t"'.join(header)+'"\n')
         for row in test:
             f.write('"'+'"\t"'.join(row)+'"\n')
