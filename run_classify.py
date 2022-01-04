@@ -82,19 +82,28 @@ def get_compute_preds(tokenizer, model):
   return compute_preds
 
 def get_compute_loss(tokenizer, model, args):
-  against = torch.mean(model.roberta.embeddings(tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  favor = torch.mean(model.roberta.embeddings(tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  unrelated = torch.mean(model.roberta.embeddings(tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  LE = torch.stack([against, favor, unrelated]).detach()
+  aga_tok = tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device)
+  fav_tok = tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device)
+  unr_tok = tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device)
 
   if args.loss_fn == 'cross_entropy':
-    def compute_loss(preds, labels):
+    def compute_loss(model, preds, labels):
+      against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
+      favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
+      unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
+
+      LE = torch.stack([against, favor, unrelated]).detach()
       scores = (preds @ LE.T).permute(0, 2, 1)
       loss = torch.nn.CrossEntropyLoss(ignore_index=-100)(scores, labels)
       return loss
   elif args.loss_fn == 'bce':
     bce_loss = torch.nn.BCEWithLogitsLoss()
-    def compute_loss(preds, labels):
+    def compute_loss(model, preds, labels):
+      against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
+      favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
+      unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
+      LE = torch.stack([against, favor, unrelated]).detach()
+
       scores = (preds @ LE.T).permute(0, 2, 1)
       pos = labels != -100
       labels = labels[pos]
@@ -248,7 +257,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
       if args.model_type == "xlm":
         inputs["langs"] = batch[4]
       outputs = model(**inputs, output_hidden_states=True)
-      loss = compute_loss(outputs['hidden_states'][-1], batch[3])
+      loss = compute_loss(model, outputs['hidden_states'][-1], batch[3])
 
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -411,7 +420,7 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
         outputs = model(**inputs, output_hidden_states=True)
         logits = outputs['hidden_states'][-1]
 
-        tmp_eval_loss = compute_loss(logits, batch[3])
+        tmp_eval_loss = compute_loss(model, logits, batch[3])
         eval_loss += tmp_eval_loss.mean().item()
 
         l_mask = batch[3] == -100
