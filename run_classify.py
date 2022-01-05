@@ -121,10 +121,12 @@ def get_compute_loss(tokenizer, model, args):
       for i in range(3):
         idx = labels == i
         sc = scores[:, i][idx]
-        loss += bce_loss(sc, torch.ones_like(sc))
+        if sc.shape[0] >= 1:
+          loss += bce_loss(sc, torch.ones_like(sc))
         idx_n = labels != i
         sc = scores[:, i][idx_n]
-        loss += bce_loss(sc, torch.zeros_like(sc))
+        if sc.shape[0] >= 1:
+          loss += bce_loss(sc, torch.zeros_like(sc))
 
       return loss
 
