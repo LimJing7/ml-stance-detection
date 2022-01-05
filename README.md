@@ -27,3 +27,8 @@ ARC splits are found from the mdl repo and topics are shared
 | Train |   1220  |     786    |   1094   |     9282     |
 | Dev   |   182   |     118    |    163   |     1388     |
 | Test  |   372   |     179    |    334   |     2674     |
+
+
+## Future Work
+- Add more datasets
+- Run some cross-lingual evaluations
