@@ -1,6 +1,8 @@
 # ml-stance-detection
 
-English datasets are from [mdl-stance-robustness](https://github.com/UKPLab/mdl-stance-robustness)
+English datasets are from [mdl-stance-robustness](https://github.com/UKPLab/mdl-stance-robustness) \
+NLPCC dataset downloaded from http://tcci.ccf.org.cn/conference/2016/pages/page05_evadata.html \
+I am using the Task A Annotated Training Data from stance detection in chinese microblogs task
 
 ## Preliminary Results
 Train on nlpcc (zh) and test on nlpcc (zh), acc = ~63% \
