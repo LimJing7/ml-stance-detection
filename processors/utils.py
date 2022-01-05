@@ -219,7 +219,7 @@ def convert_stance_examples_to_mlm_features(
   """
   Loads a data file into a list of ``InputFeatures``
   Args:
-    examples: List of ``InputExamples`` or ``tf.data.Dataset`` containing the examples.
+    examples: List of ``StanceExamples`` or ``tf.data.Dataset`` containing the examples.
     tokenizer: Instance of a tokenizer that will tokenize the examples
     max_length: Maximum example length
     task: GLUE task
