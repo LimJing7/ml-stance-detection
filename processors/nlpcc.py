@@ -74,5 +74,5 @@ nlpcc_output_modes = {
 }
 
 nlpcc_tasks_num_labels = {
-    "stance": 3,
+    "stance": 4,
 }
