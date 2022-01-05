@@ -20,7 +20,7 @@ import logging
 import os
 
 from transformers import DataProcessor
-from .utils import InputExample
+from .utils import StanceExample
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +39,16 @@ class NLPCCProcessor(DataProcessor):
 
       for (i, line) in enumerate(lines):
         guid = "%s-%s" % (split, i)
-        text_a = line[1]
-        text_b = line[2]
+        topic = line[1]
+        text = line[2]
         if split == 'test' and len(line) != 4:
-          label = "neutral"
+          label = "UNRELATED"
         else:
           label = str(line[3].strip())
-        assert isinstance(text_a, str) and isinstance(text_b, str) and isinstance(label, str)
-        examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
+          if label == 'NONE':
+            label = 'UNRELATED'
+        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
+        examples.append(StanceExample(guid=guid, text_a=topic, text_b=text, label=label))
       return examples
 
     def get_train_examples(self, data_dir):
@@ -60,7 +62,7 @@ class NLPCCProcessor(DataProcessor):
 
     def get_labels(self):
         """See base class."""
-        return ["AGAINST", "FAVOR", "NONE"]
+        return ["AGAINST", "DISCUSS", "FAVOR", "UNRELATED"]
 
 
 nlpcc_processors = {

@@ -20,7 +20,7 @@ class InputExample(object):
     specified for train and dev examples, but not for test examples.
   """
 
-  def __init__(self, guid, text_a, text_b=None, label=None, language=None):
+  def __init__(self, guid, text_a, text_b, label=None, language=None):
     self.guid = guid
     self.text_a = text_a
     self.text_b = text_b
@@ -39,6 +39,26 @@ class InputExample(object):
     """Serializes this instance to a JSON string."""
     return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
+
+class StanceExample(InputExample):
+  """
+  A single training/text example for stance detection
+  Args:
+    guid: Unique id for the example.
+    topic: string. The untokenized text of the first sequence. For single
+    sequence tasks, only this sequence must be specified.
+    text: string. The untokenized text of the second sequence.
+    Only must be specified for sequence pair tasks.
+    label: (Optional) string. The label of the example. This should be
+    specified for train and dev examples, but not for test examples.
+  """
+
+  def __init__(self, guid, topic, text, label=None, language=None):
+    self.guid = guid
+    self.topic = topic
+    self.text = text
+    self.label = label
+    self.language = language
 
 class InputFeatures(object):
   """
@@ -231,7 +251,7 @@ def convert_stance_examples_to_mlm_features(
     #   example = processor.tfds_map(example)
 
     if isinstance(tokenizer, XLMRobertaTokenizer):
-      inputs = tokenizer.encode_plus(f'The stance of the following {example.text_b} is {tokenizer.mask_token} the {example.text_a}', add_special_tokens=True, max_length=max_length)
+      inputs = tokenizer.encode_plus(f'The stance of the following {example.text} is {tokenizer.mask_token} the {example.topic}', add_special_tokens=True, max_length=max_length)
     else:
       raise NotImplementedError('This tokenizer is not supported')
 

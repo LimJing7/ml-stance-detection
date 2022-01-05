@@ -72,9 +72,10 @@ PROCESSORS = {
 
 def get_compute_preds(tokenizer, model):
   against = torch.mean(model.roberta.embeddings(tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
+  discuss = torch.mean(model.roberta.embeddings(tokenizer.encode('discussing', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
   favor = torch.mean(model.roberta.embeddings(tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
   unrelated = torch.mean(model.roberta.embeddings(tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  LE = torch.stack([against, favor, unrelated]).detach()
+  LE = torch.stack([against, discuss, favor, unrelated]).detach()
   def compute_preds(preds):
     scores = (preds @ LE.T)
     preds = torch.max(scores, axis=1)[1]
@@ -83,16 +84,18 @@ def get_compute_preds(tokenizer, model):
 
 def get_compute_loss(tokenizer, model, args):
   aga_tok = tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device)
+  dis_tok = tokenizer.encode('discussing', add_special_tokens=False, return_tensors='pt').to(model.device)
   fav_tok = tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device)
   unr_tok = tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device)
 
   if args.loss_fn == 'cross_entropy':
     def compute_loss(model, preds, labels):
       against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
+      discuss = torch.mean(model.roberta.embeddings(dis_tok)[0], axis=0)
       favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
       unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
 
-      LE = torch.stack([against, favor, unrelated]).detach()
+      LE = torch.stack([against, discuss, favor, unrelated]).detach()
       scores = (preds @ LE.T).permute(0, 2, 1)
       loss = torch.nn.CrossEntropyLoss(ignore_index=-100)(scores, labels)
       return loss
@@ -100,9 +103,10 @@ def get_compute_loss(tokenizer, model, args):
     bce_loss = torch.nn.BCEWithLogitsLoss()
     def compute_loss(model, preds, labels):
       against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
+      discuss = torch.mean(model.roberta.embeddings(dis_tok)[0], axis=0)
       favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
       unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
-      LE = torch.stack([against, favor, unrelated]).detach()
+      LE = torch.stack([against, discuss, favor, unrelated]).detach()
 
       scores = (preds @ LE.T).permute(0, 2, 1)
       pos = labels != -100
