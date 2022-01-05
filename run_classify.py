@@ -50,6 +50,7 @@ from processors.utils import (
   convert_stance_examples_to_mlm_features,
 )
 from processors.nlpcc import NLPCCProcessor
+from processors.arc import ARCProcessor
 
 try:
   from torch.utils.tensorboard import SummaryWriter
@@ -66,7 +67,8 @@ MODEL_CLASSES = {
 }
 
 PROCESSORS = {
-  'stance': NLPCCProcessor,
+  'stance': {'arc': ARCProcessor,
+             'nlpcc': NLPCCProcessor}
 }
 
 
@@ -112,8 +114,8 @@ def get_compute_loss(tokenizer, model, args):
       pos = labels != -100
       labels = labels[pos]
       pos = pos.unsqueeze(1)
-      pos = pos.expand(-1,3,-1)
-      scores = scores[pos].reshape(-1, 3)
+      pos = pos.expand(-1,4,-1)
+      scores = scores[pos].reshape(-1, 4)
 
       loss = 0
       for i in range(3):
@@ -296,16 +298,18 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_lang:
-                for lang in args.predict_languages.split(','):
-                  results = evaluate(args, model, tokenizer, split='dev', language=lang, lang2id=lang2id)
+                pred_langs = args.predict_languages.split(',')
+                pred_ds = args.predict_datasets.split(',')
+                for lang, ds in zip(pred_langs, pred_ds):
+                  results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
                   for key, value in results.items():
                     tb_writer.add_scalar("eval_{}/{}".format(key, lang), value, global_step)
               else:
-                results = evaluate(args, model, tokenizer, split='dev', language=args.train_language, lang2id=lang2id)
+                results = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
                 for key, value in results.items():
                   tb_writer.add_scalar("eval_{}".format(key), value, global_step)
             else:
-              results = evaluate(args, model, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id)
+              results = evaluate(args, model, tokenizer, split=args.train_split, dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
               for key, value in results.items():
                 tb_writer.add_scalar("eval_{}".format(key), value, global_step)
 
@@ -315,15 +319,17 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
             total = total_correct = 0.0
             with open(output_predict_file, 'a') as writer:
               writer.write('\n======= Predict using the model from checkpoint-{}:\n'.format(global_step))
-              for language in args.predict_languages.split(','):
-                result = evaluate(args, model, tokenizer, split=args.test_split, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step))
+              pred_langs = args.predict_languages.split(',')
+              pred_ds = args.predict_datasets.split(',')
+              for language, ds in zip(pred_langs, pred_ds):
+                result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step))
                 writer.write('{}={}\n'.format(language, result['acc']))
                 total += result['num']
                 total_correct += result['correct']
               writer.write('total={}\n'.format(total_correct / total))
 
           if args.save_only_best_checkpoint:
-            result = evaluate(args, model, tokenizer, split='dev', language=args.train_language, lang2id=lang2id, prefix=str(global_step))
+            result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step))
             logger.info(" Dev accuracy {} = {}".format(args.train_language, result['acc']))
             if result['acc'] > best_score:
               logger.info(" result['acc']={} > best_score={}".format(result['acc'], best_score))
@@ -376,7 +382,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   return global_step, tr_loss / global_step, best_score, best_checkpoint
 
 
-def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True):
+def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True):
   """Evalute the model."""
   eval_task_names = (args.task_name,)
   eval_outputs_dirs = (args.output_dir,)
@@ -386,7 +392,7 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
 
   results = {}
   for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-    eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, split=split, language=language, lang2id=lang2id, evaluate=True)
+    eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, language=language, lang2id=lang2id, evaluate=True)
 
     if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
       os.makedirs(eval_output_dir)
@@ -401,7 +407,7 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
       model = torch.nn.DataParallel(model)
 
     # Eval!
-    logger.info("***** Running evaluation {} {} *****".format(prefix, language))
+    logger.info("***** Running evaluation {} {} *****".format(prefix, dataset))
     logger.info("  Num examples = %d", len(eval_dataset))
     logger.info("  Batch size = %d", args.eval_batch_size)
     eval_loss = 0.0
@@ -465,20 +471,20 @@ def evaluate(args, model, tokenizer, split='train', language='en', lang2id=None,
             fout.write(str(p) + '\n')
           else:
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
-    logger.info("***** Eval results {} {} *****".format(prefix, language))
+    logger.info("***** Eval results {} {} *****".format(prefix, dataset))
     for key in sorted(result.keys()):
       logger.info("  %s = %s", key, str(result[key]))
 
   return results
 
 
-def load_and_cache_examples(args, task, tokenizer, split='train', language='en', lang2id=None, evaluate=False):
+def load_and_cache_examples(args, task, dataset, tokenizer, split='train', language='en', lang2id=None, evaluate=False):
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
-  processor = PROCESSORS[task]()
+  processor = PROCESSORS[task][dataset]()
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
@@ -486,7 +492,8 @@ def load_and_cache_examples(args, task, tokenizer, split='train', language='en',
 
   cached_features_file = os.path.join(
     args.data_dir,
-    "cached_nlpcc_{}_{}_{}_{}_{}{}".format(
+    "cached_{}_{}_{}_{}_{}_{}{}".format(
+      dataset,
       split,
       cache_model_name_or_path,
       str(args.max_seq_length),
@@ -577,10 +584,16 @@ def main():
     help="Path to pre-trained model or shortcut name",
   )
   parser.add_argument(
-    "--train_language", default="en", type=str, help="Train language if is different of the evaluation language."
+    "--train_language", default="en", type=str, help="Train language."
+  )
+  parser.add_argument(
+    "--train_dataset", default="arc", type=str, help="Train dataset."
   )
   parser.add_argument(
     "--predict_languages", type=str, default="en", help="prediction languages separated by ','."
+  )
+  parser.add_argument(
+    "--predict_datasets", type=str, default="arc", help="prediction datasets separated by ','."
   )
   parser.add_argument(
     "--output_dir",
@@ -766,7 +779,7 @@ def main():
   # Prepare dataset
   if args.task_name not in PROCESSORS:
     raise ValueError("Task not found: %s" % (args.task_name))
-  processor = PROCESSORS[args.task_name]()
+  processor = list(PROCESSORS[args.task_name].values())[0]()
   args.output_mode = "classification"
   label_list = processor.get_labels()
   num_labels = len(label_list)
@@ -818,7 +831,7 @@ def main():
         cache_dir=args.cache_dir if args.cache_dir else None,
       )
     model.to(args.device)
-    train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
+    train_dataset = load_and_cache_examples(args, args.task_name, args.train_dataset, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
@@ -870,7 +883,7 @@ def main():
 
       model = model_class.from_pretrained(checkpoint)
       model.to(args.device)
-      result = evaluate(args, model, tokenizer, split='dev', language=args.train_language, lang2id=lang2id, prefix=prefix)
+      result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=prefix)
       if result['acc'] > best_score:
         best_checkpoint = checkpoint
         best_score = result['acc']
@@ -893,9 +906,11 @@ def main():
     total = total_correct = 0.0
     with open(output_predict_file, 'a') as writer:
       writer.write('======= Predict using the model from {} for {}:\n'.format(best_checkpoint, args.test_split))
-      for language in args.predict_languages.split(','):
+      pred_langs = args.predict_languages.split(',')
+      pred_ds = args.predict_datasets.split(',')
+      for language, ds in zip(pred_langs, pred_ds):
         output_file = os.path.join(args.output_dir, 'test-{}.tsv'.format(language))
-        result = evaluate(args, model, tokenizer, split=args.test_split, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file)
+        result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file)
         writer.write('{}={}\n'.format(language, result['acc']))
         logger.info('{}={}'.format(language, result['acc']))
         total += result['num']
@@ -910,9 +925,11 @@ def main():
     total = total_correct = 0.0
     with open(output_predict_file, 'w') as writer:
       writer.write('======= Predict using the model from {}:\n'.format(args.init_checkpoint))
-      for language in args.predict_languages.split(','):
+      pred_langs = args.predict_languages.split(',')
+      pred_ds = args.predict_datasets.split(',')
+      for language, ds in zip(pred_langs, pred_ds):
         output_file = os.path.join(args.output_dir, 'dev-{}.tsv'.format(language))
-        result = evaluate(args, model, tokenizer, split='dev', language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=False)
+        result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=False)
         writer.write('{}={}\n'.format(language, result['acc']))
         total += result['num']
         total_correct += result['correct']
