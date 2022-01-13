@@ -49,7 +49,7 @@ class ARCProcessor(DataProcessor):
         topic = line['premise']
         text = line['hypothesis']
         if split == 'test' and len(line) != 4:
-          label = "NONE"
+          label = "UNRELATED"
         else:
           label = ARCProcessor.label_map[line['label']]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
