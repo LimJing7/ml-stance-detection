@@ -33,6 +33,26 @@ ARC splits are found from the mdl repo and topics are shared
 | Dev   |   182   |     118    |    163   |     1388     |
 | Test  |   372   |     179    |    334   |     2674     |
 
+### Perspectrum
+Perspectrum splits are found from the mdl repo and topics are shared
+
+
+|       | Against | Discussing | In Favor | Unrelated To |
+|-------|:-------:|:----------:|:--------:|:------------:|
+| Train |   3379  |      0     |   3599   |       0      |
+| Dev   |   1024  |      0     |   1047   |       0      |
+| Test  |   1302  |      0     |   1471   |       0      |
+
+### Semeval 2016 task 6
+Semeval 2016 task 6 splits are found from the mdl repo and topics are shared
+
+
+|       | Against | Discussing | In Favor | Unrelated To |
+|-------|:-------:|:----------:|:--------:|:------------:|
+| Train |   1191  |     657    |    649   |       0      |
+| Dev   |   204   |     109    |    104   |       0      |
+| Test  |   715   |     230    |    304   |       0      |
+
 
 ## Future Work
 - Add more datasets
