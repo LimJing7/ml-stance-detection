@@ -6,7 +6,12 @@ I am using the Task A Annotated Training Data from stance detection in chinese m
 
 ## Preliminary Results
 Train on nlpcc (zh) and test on nlpcc (zh), acc = ~63% \
-Train on arc (en) and test on arc (en), acc = ~75%
+Train on arc (en) and test on arc (en), acc = ~75% \
+Train on perspectrum (en) and test on perspectrum (en), acc = ~83% \
+Train on semeval2016t6 (en) and test on semeval2016t6 (en), acc = ~74%
+
+### Crosslingual
+Train on arc (en) and test on nlpcc (zh), acc = ~42%
 
 ## Datasets
 ### NLPCC

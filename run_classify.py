@@ -22,6 +22,7 @@ import glob
 import logging
 import os
 import random
+import statistics
 
 import numpy as np
 import torch
@@ -51,6 +52,8 @@ from processors.utils import (
 )
 from processors.nlpcc import NLPCCProcessor
 from processors.arc import ARCProcessor
+from processors.perspectrum import PerspectrumProcessor
+from processors.semeval2016t6 import SemEval2016t6Processor
 
 try:
   from torch.utils.tensorboard import SummaryWriter
@@ -68,7 +71,9 @@ MODEL_CLASSES = {
 
 PROCESSORS = {
   'stance': {'arc': ARCProcessor,
-             'nlpcc': NLPCCProcessor}
+             'nlpcc': NLPCCProcessor,
+             'perspectrum': PerspectrumProcessor,
+             'semeval2016t6': SemEval2016t6Processor}
 }
 
 
@@ -305,7 +310,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
                 for lang, ds in zip(pred_langs, pred_ds):
                   results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
                   for key, value in results.items():
-                    tb_writer.add_scalar("eval_{}/{}".format(key, lang), value, global_step)
+                    tb_writer.add_scalar("eval_{}/{}".format(key, ds), value, global_step)
               else:
                 results = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
                 for key, value in results.items():
@@ -325,15 +330,26 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
               pred_ds = args.predict_datasets.split(',')
               for language, ds in zip(pred_langs, pred_ds):
                 result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step))
-                writer.write('{}={}\n'.format(language, result['acc']))
+                writer.write('{}={}\n'.format(ds, result['acc']))
                 total += result['num']
                 total_correct += result['correct']
               writer.write('total={}\n'.format(total_correct / total))
 
           if args.save_only_best_checkpoint:
-            result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step))
-            logger.info(" Dev accuracy {} = {}".format(args.train_language, result['acc']))
-            if result['acc'] > best_score:
+            if args.eval_during_train_use_pred_lang:
+              pred_langs = args.predict_languages.split(',')
+              pred_ds = args.predict_datasets.split(',')
+              accs = []
+              for language, ds in zip(pred_langs, pred_ds):
+                result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step))
+                accs.append(result['acc'])
+              acc = statistics.mean(accs)
+              logger.info(" Dev accuracy {} = {}".format(args.predict_datasets, acc))
+            else:
+              result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step))
+              logger.info(" Dev accuracy {} = {}".format(args.train_language, result['acc']))
+              acc = result['acc']
+            if acc > best_score:
               logger.info(" result['acc']={} > best_score={}".format(result['acc'], best_score))
               output_dir = os.path.join(args.output_dir, "checkpoint-best")
               best_checkpoint = output_dir
