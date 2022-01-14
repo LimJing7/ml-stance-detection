@@ -35,6 +35,7 @@ class SemEval2016t6Processor(DataProcessor):
                  2: 'DISCUSS',
                  1: 'FAVOR',
                  3: 'UNRELATED'}
+    language = 'en'
 
     def __init__(self):
         pass

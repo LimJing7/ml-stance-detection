@@ -35,6 +35,7 @@ class ARCProcessor(DataProcessor):
                  1: 'DISCUSS',
                  2: 'FAVOR',
                  0: 'UNRELATED'}
+    language = 'en'
 
     def __init__(self):
         pass

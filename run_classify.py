@@ -26,7 +26,7 @@ import statistics
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 from torch.utils.data import RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
@@ -305,9 +305,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_lang:
-                pred_langs = args.predict_languages.split(',')
-                pred_ds = args.predict_datasets.split(',')
-                for lang, ds in zip(pred_langs, pred_ds):
+                for lang, ds in zip(args.predict_languages, args.predict_datasets):
                   results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
                   for key, value in results.items():
                     tb_writer.add_scalar("eval_{}/{}".format(key, ds), value, global_step)
@@ -326,9 +324,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
             total = total_correct = 0.0
             with open(output_predict_file, 'a') as writer:
               writer.write('\n======= Predict using the model from checkpoint-{}:\n'.format(global_step))
-              pred_langs = args.predict_languages.split(',')
-              pred_ds = args.predict_datasets.split(',')
-              for language, ds in zip(pred_langs, pred_ds):
+              for language, ds in zip(args.predict_languages, args.predict_datasets):
                 result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step))
                 writer.write('{}={}\n'.format(ds, result['acc']))
                 total += result['num']
@@ -337,10 +333,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 
           if args.save_only_best_checkpoint:
             if args.eval_during_train_use_pred_lang:
-              pred_langs = args.predict_languages.split(',')
-              pred_ds = args.predict_datasets.split(',')
               accs = []
-              for language, ds in zip(pred_langs, pred_ds):
+              for language, ds in zip(args.predict_languages, args.predict_datasets):
                 result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step))
                 accs.append(result['acc'])
               acc = statistics.mean(accs)
@@ -402,6 +396,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 
 def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True):
   """Evalute the model."""
+
   eval_task_names = (args.task_name,)
   eval_outputs_dirs = (args.output_dir,)
 
@@ -410,7 +405,14 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
   results = {}
   for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-    eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, language=language, lang2id=lang2id, evaluate=True)
+    if type(dataset) == list:
+      eval_datasets = []
+      for ds in dataset:
+        eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True)
+        eval_datasets.append(eval_datasets)
+      eval_dataset = ConcatDataset(eval_datasets)
+    else:
+      eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, lang2id=lang2id, evaluate=True)
 
     if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
       os.makedirs(eval_output_dir)
@@ -496,13 +498,14 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
   return results
 
 
-def load_and_cache_examples(args, task, dataset, tokenizer, split='train', language='en', lang2id=None, evaluate=False):
+def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2id=None, evaluate=False):
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
   processor = PROCESSORS[task][dataset]()
+  language = processor.language
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
@@ -602,16 +605,18 @@ def main():
     help="Path to pre-trained model or shortcut name",
   )
   parser.add_argument(
-    "--train_language", default="en", type=str, help="Train language."
+    "--train_dataset",
+    default=["arc"],
+    nargs="*",
+    type=str,
+    help="Train dataset(s)."
   )
   parser.add_argument(
-    "--train_dataset", default="arc", type=str, help="Train dataset."
-  )
-  parser.add_argument(
-    "--predict_languages", type=str, default="en", help="prediction languages separated by ','."
-  )
-  parser.add_argument(
-    "--predict_datasets", type=str, default="arc", help="prediction datasets separated by ','."
+    "--predict_datasets",
+    default=["arc"],
+    nargs="*",
+    type=str,
+    help="prediction dataset(s)"
   )
   parser.add_argument(
     "--output_dir",
@@ -622,7 +627,7 @@ def main():
   )
   parser.add_argument(
     "--task_name",
-    default="xnli",
+    default="stance",
     type=str,
     required=True,
     help="The task name",
@@ -831,6 +836,16 @@ def main():
     torch.distributed.barrier()
   logger.info("Training/evaluation parameters %s", args)
 
+  args.train_language = []
+  for train_ds in args.train_dataset:
+    lang = PROCESSORS[args.task_name][train_ds].language
+    args.train_language.append(lang)
+
+  args.predict_languages = []
+  for pred_ds in args.predict_datasets:
+    lang = PROCESSORS[args.task_name][pred_ds].language
+    args.predict_languages.append(lang)
+
   # Training
   if args.do_train:
     if args.init_checkpoint:
@@ -849,7 +864,11 @@ def main():
         cache_dir=args.cache_dir if args.cache_dir else None,
       )
     model.to(args.device)
-    train_dataset = load_and_cache_examples(args, args.task_name, args.train_dataset, tokenizer, split=args.train_split, language=args.train_language, lang2id=lang2id, evaluate=False)
+    train_datasets = []
+    for lang, train_ds in zip(args.train_language, args.train_dataset):
+      train_dataset = load_and_cache_examples(args, args.task_name, train_ds, tokenizer, split=args.train_split, lang2id=lang2id, evaluate=False)
+      train_datasets.append(train_dataset)
+    train_dataset = ConcatDataset(train_datasets)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
@@ -924,9 +943,7 @@ def main():
     total = total_correct = 0.0
     with open(output_predict_file, 'a') as writer:
       writer.write('======= Predict using the model from {} for {}:\n'.format(best_checkpoint, args.test_split))
-      pred_langs = args.predict_languages.split(',')
-      pred_ds = args.predict_datasets.split(',')
-      for language, ds in zip(pred_langs, pred_ds):
+      for language, ds in zip(args.predict_languages, args.predict_datasets):
         output_file = os.path.join(args.output_dir, 'test-{}.tsv'.format(language))
         result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file)
         writer.write('{}={}\n'.format(language, result['acc']))
@@ -943,9 +960,7 @@ def main():
     total = total_correct = 0.0
     with open(output_predict_file, 'w') as writer:
       writer.write('======= Predict using the model from {}:\n'.format(args.init_checkpoint))
-      pred_langs = args.predict_languages.split(',')
-      pred_ds = args.predict_datasets.split(',')
-      for language, ds in zip(pred_langs, pred_ds):
+      for language, ds in zip(args.predict_languages, args.predict_datasets):
         output_file = os.path.join(args.output_dir, 'dev-{}.tsv'.format(language))
         result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=False)
         writer.write('{}={}\n'.format(language, result['acc']))

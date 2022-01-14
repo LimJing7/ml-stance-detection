@@ -29,6 +29,8 @@ class NLPCCProcessor(DataProcessor):
     """Processor for the NLPCC dataset.
     Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
 
+    language = 'zh'
+
     def __init__(self):
         pass
 
