@@ -397,6 +397,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True):
   """Evalute the model."""
 
+  model.eval()
+
   eval_task_names = (args.task_name,)
   eval_outputs_dirs = (args.output_dir,)
 
@@ -409,7 +411,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       eval_datasets = []
       for ds in dataset:
         eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True)
-        eval_datasets.append(eval_datasets)
+        eval_datasets.append(eval_dataset)
       eval_dataset = ConcatDataset(eval_datasets)
     else:
       eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, lang2id=lang2id, evaluate=True)
