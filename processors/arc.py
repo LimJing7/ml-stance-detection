@@ -49,10 +49,7 @@ class ARCProcessor(DataProcessor):
         guid = "%s-%s" % (split, i)
         topic = line['premise']
         text = line['hypothesis']
-        if split == 'test' and len(line) != 4:
-          label = "UNRELATED"
-        else:
-          label = ARCProcessor.label_map[line['label']]
+        label = ARCProcessor.label_map[line['label']]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
         examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
       return examples

@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" ARC utils (dataset loading and evaluation) """
+""" SemEval 2016 task 6 utils (dataset loading and evaluation) """
 
 
 import jsonlines
@@ -49,10 +49,7 @@ class SemEval2016t6Processor(DataProcessor):
         guid = "%s-%s" % (split, i)
         topic = line['premise']
         text = line['hypothesis']
-        if split == 'test' and len(line) != 4:
-          label = "UNRELATED"
-        else:
-          label = SemEval2016t6Processor.label_map[line['label']]
+        label = SemEval2016t6Processor.label_map[line['label']]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
         examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
       return examples
