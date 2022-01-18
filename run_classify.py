@@ -50,10 +50,16 @@ import transformers
 from processors.utils import (
   convert_stance_examples_to_mlm_features,
 )
-from processors.nlpcc import NLPCCProcessor
+from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
+from processors.fnc1 import FNC1Processor
+from processors.iac1 import IAC1Processor
+from processors.ibmcs import IBMCSProcessor
+from processors.nlpcc import NLPCCProcessor
 from processors.perspectrum import PerspectrumProcessor
+from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
+from processors.snopes import SnopesProcessor
 
 try:
   from torch.utils.tensorboard import SummaryWriter
@@ -71,9 +77,15 @@ MODEL_CLASSES = {
 
 PROCESSORS = {
   'stance': {'arc': ARCProcessor,
+             'argmin': ArgMinProcessor,
+             'fnc1': FNC1Processor,
+             'iac1': IAC1Processor,
+             'ibmcs': IBMCSProcessor,
              'nlpcc': NLPCCProcessor,
              'perspectrum': PerspectrumProcessor,
-             'semeval2016t6': SemEval2016t6Processor}
+             'scd': SCDProcessor,
+             'semeval2016t6': SemEval2016t6Processor,
+             'snopes': SnopesProcessor}
 }
 
 
