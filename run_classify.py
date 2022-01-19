@@ -25,6 +25,7 @@ import random
 import statistics
 
 import numpy as np
+from sklearn.metrics import f1_score
 import torch
 from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 from torch.utils.data import RandomSampler, SequentialSampler
@@ -155,7 +156,8 @@ def compute_metrics(preds, labels):
     "acc": (preds == labels).mean(),
     "num": len(
       preds),
-    "correct": (preds == labels).sum()
+    "correct": (preds == labels).sum(),
+    "macro f1": f1_score(labels, preds, average='macro')
   }
   return scores
 
