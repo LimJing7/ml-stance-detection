@@ -320,7 +320,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           # Only evaluate on single GPU otherwise metrics may not average well
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.eval_during_train_on_dev:
-              if args.eval_during_train_use_pred_lang:
+              if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
                   results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
                   for key, value in results.items():
@@ -348,7 +348,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
               writer.write('total={}\n'.format(total_correct / total))
 
           if args.save_only_best_checkpoint:
-            if args.eval_during_train_use_pred_lang:
+            if args.eval_during_train_use_pred_dataset:
               accs = []
               for language, ds in zip(args.predict_languages, args.predict_datasets):
                 result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step))
@@ -690,7 +690,7 @@ def main():
   )
   parser.add_argument("--eval_during_train_on_dev", action="store_true", help="Run eval on dev set during training")
   parser.add_argument(
-    "--eval_during_train_use_pred_lang", action="store_true", help="Use pred languages for eval during training"
+    "--eval_during_train_use_pred_dataset", action="store_true", help="Use pred dataset for eval during training"
   )
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
