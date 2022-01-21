@@ -61,6 +61,7 @@ from processors.perspectrum import PerspectrumProcessor
 from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
 from processors.snopes import SnopesProcessor
+from processors.vast import VASTProcessor
 
 try:
   from torch.utils.tensorboard import SummaryWriter
@@ -86,7 +87,8 @@ PROCESSORS = {
              'perspectrum': PerspectrumProcessor,
              'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
-             'snopes': SnopesProcessor}
+             'snopes': SnopesProcessor,
+             'vast': VASTProcessor}
 }
 
 
