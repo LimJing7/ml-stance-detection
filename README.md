@@ -1,25 +1,156 @@
 # ml-stance-detection
 
-English datasets are from [mdl-stance-robustness](https://github.com/UKPLab/mdl-stance-robustness) \
+Unless otherwise stated, English datasets are from [mdl-stance-robustness](https://github.com/UKPLab/mdl-stance-robustness) \
 NLPCC dataset downloaded from http://tcci.ccf.org.cn/conference/2016/pages/page05_evadata.html \
 I am using the Task A Annotated Training Data from stance detection in chinese microblogs task
 
+## Sample Command
+CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --model_type xlmr --model_name_or_path microsoft/infoxlm-base --output_dir ../ml-stance-vast-attempt1 --task_name stance --do_train --do_eval --evaluate_during_training --eval_during_train_on_dev --per_gpu_train_batch_size 16 --per_gpu_eval_batch_size 16 --learning_rate 5e-6 --adam_epsilon 1e-8 --num_train_epochs 20 --overwrite_output_dir --loss_fn bce --logging_steps 500 --save_steps 500 --save_only_best_checkpoint --train_dataset vast
+
 ## Preliminary Results
-Train on nlpcc (zh) and test on nlpcc (zh), acc = ~63% \
-Train on arc (en) and test on arc (en), acc = ~75% \
-Train on argmin (en) and test on argmin (en), acc = ~71% \
-Train on fnc1 (en) and test on fnc1 (en), acc = ~61% \
-Train on iac1 (en) and test on iac1 (en), acc = ~50% \
-Train on ibmcs (en) and test on ibmcs (en), acc = ~74% \
-Train on perspectrum (en) and test on perspectrum (en), acc = ~83% \
-Train on semeval2016t6 (en) and test on semeval2016t6 (en), acc = ~74% \
-Train on snopes (en) and test on snopes (en), acc = ~80%
+
+### Chinese
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          | nlpcc |
+| Test Dataset           | nlpcc |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.63 |
+| Macro F1               |  0.56 |
+
+### English
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          |   arc |
+| Test Dataset           |   arc |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.62 |
+| Macro F1               |  0.31 |
+
+| Attribute              | Value  |
+|------------------------|--------|
+| Train Dataset          | argmin |
+| Test Dataset           | argmin |
+| Learning Rate          |   5e-6 |
+| Number of Train Epochs |     20 |
+| Logging / Save steps   |    500 |
+| Accuracy               |   0.71 |
+| Macro F1               |   0.51 |
+
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          |  fnc1 |
+| Test Dataset           |  fnc1 |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.64 |
+| Macro F1               |  0.46 |
+
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          |  iac1 |
+| Test Dataset           |  iac1 |
+| Learning Rate          |  1e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.48 |
+| Macro F1               |  0.40 |
+
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          | ibmcs |
+| Test Dataset           | ibmcs |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    50 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.71 |
+| Macro F1               |  0.71 |
+
+| Attribute              | Value       |
+|------------------------|-------------|
+| Train Dataset          | perspectrum |
+| Test Dataset           | perspectrum |
+| Learning Rate          |        5e-6 |
+| Number of Train Epochs |          20 |
+| Logging / Save steps   |         500 |
+| Accuracy               |        0.83 |
+| Macro F1               |        0.83 |
+
+| Attribute              | Value         |
+|------------------------|---------------|
+| Train Dataset          | semeval2016t6 |
+| Test Dataset           | semeval2016t6 |
+| Learning Rate          |          5e-5 |
+| Number of Train Epochs |            20 |
+| Logging / Save steps   |           500 |
+| Accuracy               |          0.73 |
+| Macro F1               |          0.23 |
+
+| Attribute              | Value  |
+|------------------------|--------|
+| Train Dataset          | snopes |
+| Test Dataset           | snopes |
+| Learning Rate          |   5e-6 |
+| Number of Train Epochs |     20 |
+| Logging / Save steps   |    500 |
+| Accuracy               |   0.80 |
+| Macro F1               |   0.75 |
+
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          |  vast |
+| Test Dataset           |  vast |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.64 |
+| Macro F1               |  0.49 |
 
 ### Crosslingual
-Train on arc (en) and test on nlpcc (zh), acc = ~40%, macro f1 = ~0.21 \
-Train on 8 en datasets and test on nlpcc (zh), LR = 3e-5, acc = ~41%, macro f1 = ~0.16 \
-Train on 8 en datasets and test on nlpcc (zh), LR = 1e-5, acc = ~50%, macro f1 = ~0.28 \
-Train on 8 en datasets and test on nlpcc (zh), LR = 5e-6, acc = ~47%, macro f1 = ~0.23 \
+| Attribute              | Value |
+|------------------------|-------|
+| Train Dataset          |   arc |
+| Test Dataset           | nlpcc |
+| Learning Rate          |  5e-6 |
+| Number of Train Epochs |    20 |
+| Logging / Save steps   |   500 |
+| Accuracy               |  0.40 |
+| Macro F1               |  0.21 |
+
+| Attribute              | Value                                                              |
+|------------------------|--------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6, snopes |
+| Test Dataset           |                                                              nlpcc |
+| Learning Rate          |                                                               3e-5 |
+| Number of Train Epochs |                                                                  5 |
+| Logging / Save steps   |                                                                500 |
+| Accuracy               |                                                               0.41 |
+| Macro F1               |                                                               0.16 |
+
+| Attribute              | Value                                                              |
+|------------------------|--------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6, snopes |
+| Test Dataset           |                                                              nlpcc |
+| Learning Rate          |                                                               1e-5 |
+| Number of Train Epochs |                                                                  5 |
+| Logging / Save steps   |                                                                500 |
+| Accuracy               |                                                               0.50 |
+| Macro F1               |                                                               0.28 |
+
+| Attribute              | Value                                                              |
+|------------------------|--------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6, snopes |
+| Test Dataset           |                                                              nlpcc |
+| Learning Rate          |                                                               5e-6 |
+| Number of Train Epochs |                                                                  5 |
+| Logging / Save steps   |                                                                500 |
+| Accuracy               |                                                               0.47 |
+| Macro F1               |                                                               0.23 |
 
 
 ## Datasets
@@ -103,6 +234,17 @@ Snopes splits are found from the mdl repo
 | Train |  3899   |     0      |  10517   |      0       |
 | Dev   |   515   |     0      |   1353   |      0       |
 | Test  |   678   |     0      |   2476   |      0       |
+
+
+### VAST
+Vast splits are found from [zero-shot-stance](https://github.com/emilyallaway/zero-shot-stance)
+
+|       | Against | Discussing | In Favor | Unrelated To |
+|-------|:-------:|:----------:|:--------:|:------------:|
+| Train |  5595   |    2555    |   5327   |      0       |
+| Dev   |   684   |    697     |   681    |      0       |
+| Test  |  1018   |    1044    |   944    |      0       |
+
 
 
 ## Future Work
