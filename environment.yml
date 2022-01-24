@@ -1,0 +1,18 @@
+name: ml_stance
+channels:
+  - defaults
+  - pytorch
+dependencies:
+  - python==3.9.4
+  - torchaudio==0.9.1
+  - pytorch==1.9.1
+  - torchvision==0.10.1
+  - cudatoolkit=10.2
+  - scikit-learn==0.24.1
+  - pip==21.0.1
+  - pip:
+      - jsonlines==3.0.0
+      - sentencepiece==0.1.96
+      - tensorboard==2.6.0
+      - tqdm==4.62.3
+      - transformers==4.11.0
