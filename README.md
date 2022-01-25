@@ -172,6 +172,16 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 | Accuracy               |                                                               0.47 |
 | Macro F1               |                                                               0.23 |
 
+| Attribute              | Value                                                                                              |
+|------------------------|----------------------------------------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6,<br> snopes, twitter2015, twitter2017, vast |
+| Test Dataset           |                                                                                              nlpcc |
+| Learning Rate          |                                                                                               1e-5 |
+| Number of Train Epochs |                                                                                                  5 |
+| Logging / Save steps   |                                                                                                500 |
+| Accuracy               |                                                                                               0.49 |
+| Macro F1               |                                                                                               0.34 |
+
 
 ## Datasets
 ### NLPCC
