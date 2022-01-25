@@ -101,6 +101,26 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 | Accuracy               |   0.80 |
 | Macro F1               |   0.75 |
 
+| Attribute              | Value       |
+|------------------------|-------------|
+| Train Dataset          | twitter2015 |
+| Test Dataset           | twitter2015 |
+| Learning Rate          |        5e-6 |
+| Number of Train Epochs |          20 |
+| Logging / Save steps   |         500 |
+| Accuracy               |        0.69 |
+| Macro F1               |        0.65 |
+
+| Attribute              | Value       |
+|------------------------|-------------|
+| Train Dataset          | twitter2017 |
+| Test Dataset           | twitter2017 |
+| Learning Rate          |        5e-6 |
+| Number of Train Epochs |          20 |
+| Logging / Save steps   |         500 |
+| Accuracy               |        0.69 |
+| Macro F1               |        0.67 |
+
 | Attribute              | Value |
 |------------------------|-------|
 | Train Dataset          |  vast |
@@ -234,6 +254,25 @@ Snopes splits are found from the mdl repo
 | Train |  3899   |     0      |  10517   |      0       |
 | Dev   |   515   |     0      |   1353   |      0       |
 | Test  |   678   |     0      |   2476   |      0       |
+
+### Twitter 2015
+Twitter 2015 data are found from [TomBERT](https://github.com/jefferyYu/TomBERT)
+
+|       | Against | Discussing | In Favor | Unrelated To |
+|-------|:-------:|:----------:|:--------:|:------------:|
+| Train |   368   |    1883    |   928    |      0       |
+| Dev   |   149   |    670     |   303    |      0       |
+| Test  |   113   |    607     |   317    |      0       |
+
+
+### Twitter 2017
+Twitter 2017 data are found from [TomBERT](https://github.com/jefferyYu/TomBERT)
+
+|       | Against | Discussing | In Favor | Unrelated To |
+|-------|:-------:|:----------:|:--------:|:------------:|
+| Train |   416   |    1638    |   1508   |      0       |
+| Dev   |   144   |    517     |   515    |      0       |
+| Test  |   168   |    573     |   493    |      0       |
 
 
 ### VAST

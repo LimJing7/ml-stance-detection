@@ -47,6 +47,7 @@ from transformers import (
   get_linear_schedule_with_warmup,
 )
 import transformers
+from processors.twitter2015 import Twitter2015Processor
 
 from processors.utils import (
   convert_stance_examples_to_mlm_features,
@@ -61,6 +62,8 @@ from processors.perspectrum import PerspectrumProcessor
 from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
 from processors.snopes import SnopesProcessor
+from processors.twitter2015 import Twitter2015Processor
+from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 
 try:
@@ -88,6 +91,8 @@ PROCESSORS = {
              'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
              'snopes': SnopesProcessor,
+             'twitter2015': Twitter2015Processor,
+             'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor}
 }
 
