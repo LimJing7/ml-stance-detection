@@ -355,20 +355,25 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           if args.save_only_best_checkpoint:
             if args.eval_during_train_use_pred_dataset:
               accs = []
+              f1s = []
               for language, ds in zip(args.predict_languages, args.predict_datasets):
                 result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step))
                 accs.append(result['acc'])
+                f1s.append(result['macro f1'])
               acc = statistics.mean(accs)
+              f1 = statistics.mean(f1s)
               logger.info(" Dev accuracy {} = {}".format(args.predict_datasets, acc))
+              logger.info(" Dev macro f1 {} = {}".format(args.predict_datasets, f1))
             else:
               result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step))
               logger.info(" Dev accuracy {} = {}".format(args.train_language, result['acc']))
-              acc = result['acc']
-            if acc > best_score:
-              logger.info(" result['acc']={} > best_score={}".format(result['acc'], best_score))
+              logger.info(" Dev macro f1 {} = {}".format(args.train_language, result['macro f1']))
+              f1 = result['macro f1']
+            if f1 > best_score:
+              logger.info(" result['macro f1']={} > best_score={}".format(f1, best_score))
               output_dir = os.path.join(args.output_dir, "checkpoint-best")
               best_checkpoint = output_dir
-              best_score = result['acc']
+              best_score = f1
               # Save model checkpoint
               if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
