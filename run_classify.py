@@ -532,17 +532,19 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
+  mlm = 'w_mlm' if args.mlm else 'no_mlm'
   cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
 
   cached_features_file = os.path.join(
     args.data_dir,
-    "cached_{}_{}_{}_{}_{}_{}{}".format(
+    "cached_{}_{}_{}_{}_{}_{}_{}{}".format(
       dataset,
       split,
       cache_model_name_or_path,
       str(args.max_seq_length),
       str(task),
       str(language),
+      mlm,
       lc,
     ),
   )
@@ -575,6 +577,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
       pad_token_segment_id=0,
       lang2id=lang2id,
+      mlm=args.mlm,
     )
     if args.local_rank in [-1, 0]:
       logger.info("Saving features into cached file %s", cached_features_file)
@@ -697,6 +700,8 @@ def main():
   parser.add_argument(
     "--eval_during_train_use_pred_dataset", action="store_true", help="Use pred dataset for eval during training"
   )
+  parser.add_argument('--mlm', action='store_true', help="use mlm in loss")
+  parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )

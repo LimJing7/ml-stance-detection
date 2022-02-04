@@ -215,6 +215,7 @@ def convert_stance_examples_to_mlm_features(
   pad_token_segment_id=0,
   mask_padding_with_zero=True,
   lang2id=None,
+  mlm=False,
 ):
   """
   Loads a data file into a list of ``InputFeatures``
@@ -250,10 +251,33 @@ def convert_stance_examples_to_mlm_features(
     #   example = processor.get_example_from_tensor_dict(example)
     #   example = processor.tfds_map(example)
 
-    if isinstance(tokenizer, XLMRobertaTokenizer):
-      inputs = tokenizer.encode_plus(f'The stance of the following {example.text} is {tokenizer.mask_token} the {example.topic}', add_special_tokens=True, max_length=max_length)
-    else:
+    # truncate
+    working_len = max_length - 11  # 11 = pattern length
+    if not isinstance(tokenizer, XLMRobertaTokenizer):
       raise NotImplementedError('This tokenizer is not supported')
+    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
+    text_len = len(toked_text['input_ids'])
+    toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=False)
+    topic_len = len(toked_topic['input_ids'])
+    inputs = tokenizer.encode_plus(f'The stance of the following is {tokenizer.mask_token} the ', add_special_tokens=True, max_length=max_length)
+    if  text_len + topic_len <= working_len:
+      pass
+    elif text_len > working_len/2 and topic_len > working_len/2:
+      toked_text['input_ids'] = toked_text['input_ids'][:working_len/2]
+      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len/2]
+      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len/2]
+      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len/2]
+    elif text_len > topic_len:
+      toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
+      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
+    elif topic_len > text_len:
+      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-topic_len]
+      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-topic_len]
+    else:
+      raise ValueError('This should not be reachable')
+
+    inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
+    inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
 
     input_ids = inputs["input_ids"]
     try:
