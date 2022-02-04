@@ -2,6 +2,8 @@ import copy
 import csv
 import json
 import logging
+import torch
+import random
 from transformers import XLMTokenizer, XLMRobertaTokenizer
 
 logger = logging.getLogger(__name__)
@@ -90,6 +92,27 @@ class InputFeatures(object):
   def to_json_string(self):
     """Serializes this instance to a JSON string."""
     return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
+
+
+class StanceFeatures(InputFeatures):
+  """
+  A single set of features of data.
+  Args:
+    input_ids: Indices of input sequence tokens in the vocabulary.
+    attention_mask: Mask to avoid performing attention on padding token indices.
+      Mask values selected in ``[0, 1]``:
+      Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+    token_type_ids: Segment token indices to indicate first and second portions of the inputs.
+    label: Label corresponding to the input
+    mlm_labels: Label for mlm task
+  """
+  def __init__(self, input_ids, attention_mask=None, token_type_ids=None, langs=None, label=None, mlm_labels=None):
+    self.input_ids = input_ids
+    self.attention_mask = attention_mask
+    self.token_type_ids = token_type_ids
+    self.label = label
+    self.langs = langs
+    self.mlm_labels = mlm_labels
 
 
 def convert_examples_to_features(
@@ -204,6 +227,31 @@ def convert_examples_to_features(
   return features
 
 
+def mask_tokens(inputs, tokenizer, mlm_probability):
+    """ Prepare masked tokens inputs/labels for masked language modeling, replace with only mask token """
+
+    if tokenizer.mask_token is None:
+        raise ValueError(
+            "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
+        )
+
+    labels = inputs.copy()
+    n_tokens = len(inputs)
+    max_masked = int(mlm_probability * n_tokens)
+    if max_masked < 1:
+      return inputs, [-100] * n_tokens
+    n_masked = random.randint(1, max_masked)
+    masked_indices = [1]*n_masked + [0]*(n_tokens-n_masked)
+    random.shuffle(masked_indices)
+    for i, mask in enumerate(masked_indices):
+      if mask == 0:
+        labels[i] = -100  # We only compute loss on masked tokens
+      else:
+        inputs[i] = tokenizer.convert_tokens_to_ids(tokenizer.mask_token)
+
+    return inputs, labels
+
+
 def convert_stance_examples_to_mlm_features(
   examples,
   tokenizer,
@@ -216,6 +264,7 @@ def convert_stance_examples_to_mlm_features(
   mask_padding_with_zero=True,
   lang2id=None,
   mlm=False,
+  mlm_probability=0,
 ):
   """
   Loads a data file into a list of ``InputFeatures``
@@ -276,8 +325,17 @@ def convert_stance_examples_to_mlm_features(
     else:
       raise ValueError('This should not be reachable')
 
-    inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
-    inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
+    if mlm:
+      mlm_labels = [-100] * len(inputs['input_ids'])
+      toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
+      toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
+
+      inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
+      inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
+      mlm_labels = mlm_labels[:7] + text_label + mlm_labels[7:10] + topic_label + mlm_labels[10:]
+    else:
+      inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
+      inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
 
     input_ids = inputs["input_ids"]
     try:
@@ -301,10 +359,14 @@ def convert_stance_examples_to_mlm_features(
       input_ids = ([pad_token] * padding_length) + input_ids
       attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
       token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+      if mlm:
+        mlm_labels = ([-100] * padding_length) + mlm_labels
     else:
       input_ids = input_ids + ([pad_token] * padding_length)
       attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
       token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+      if mlm:
+        mlm_labels = mlm_labels + ([-100] * padding_length)
 
     if lang2id is not None:
       lid = lang2id.get(example.language, lang2id["en"])
@@ -319,6 +381,10 @@ def convert_stance_examples_to_mlm_features(
     assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
       len(token_type_ids), max_length
     )
+    if mlm:
+      assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
+        len(mlm_labels), max_length
+      )
 
     label = [-100] * len(input_ids)
     label[input_ids.index(tokenizer.mask_token_id)] = label_map[example.label]
@@ -332,10 +398,19 @@ def convert_stance_examples_to_mlm_features(
       logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
       logger.info("label: %s" % " ".join([str(x) for x in label]))
       logger.info("language: %s, (lid = %d)" % (example.language, lid))
+      if mlm:
+        logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
 
-    features.append(
-      InputFeatures(
-        input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
+    if mlm:
+      features.append(
+        StanceFeatures(
+          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels
+        )
       )
-    )
+    else:
+      features.append(
+        InputFeatures(
+          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
+        )
+      )
   return features

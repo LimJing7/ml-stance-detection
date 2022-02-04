@@ -284,6 +284,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
       model.train()
       batch = tuple(t.to(args.device) for t in batch)
       inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
+      if args.mlm:
+        inputs['labels'] = batch[4]
       if args.model_type != "distilbert":
         inputs["token_type_ids"] = (
           batch[2] if args.model_type in ["bert"] else None
@@ -292,6 +294,10 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         inputs["langs"] = batch[4]
       outputs = model(**inputs, output_hidden_states=True)
       loss = compute_loss(model, outputs['hidden_states'][-1], batch[3])
+
+      if args.mlm:
+        mlm_loss = outputs['loss']
+        loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -324,6 +330,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 
           # Only evaluate on single GPU otherwise metrics may not average well
           if (args.local_rank == -1 and args.evaluate_during_training):
+            tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
@@ -583,6 +590,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       pad_token_segment_id=0,
       lang2id=lang2id,
       mlm=args.mlm,
+      mlm_probability=args.mlm_probability,
     )
     if args.local_rank in [-1, 0]:
       logger.info("Saving features into cached file %s", cached_features_file)
@@ -601,12 +609,21 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
   else:
     raise ValueError("No other `output_mode` for {}.".format(args.task_name))
+  if args.mlm:
+    all_mlm_labels = torch.tensor([f.mlm_labels for f in features], dtype=torch.long)
 
-  if args.model_type == 'xlm':
-    all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_langs)
+  if args.mlm:
+    if args.model_type == 'xlm':
+      all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_mlm_labels, all_langs)
+    else:
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_mlm_labels)
   else:
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+    if args.model_type == 'xlm':
+      all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_langs)
+    else:
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
   return dataset
 
 
@@ -706,6 +723,7 @@ def main():
     "--eval_during_train_use_pred_dataset", action="store_true", help="Use pred dataset for eval during training"
   )
   parser.add_argument('--mlm', action='store_true', help="use mlm in loss")
+  parser.add_argument('--mlm_probability', default=0.105)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
