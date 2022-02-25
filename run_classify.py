@@ -21,6 +21,7 @@ import argparse
 import glob
 import logging
 import os
+import pickle
 import random
 import statistics
 
@@ -97,58 +98,74 @@ PROCESSORS = {
 }
 
 
-def get_compute_preds(tokenizer, model):
-  against = torch.mean(model.roberta.embeddings(tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  discuss = torch.mean(model.roberta.embeddings(tokenizer.encode('discussing', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  favor = torch.mean(model.roberta.embeddings(tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  unrelated = torch.mean(model.roberta.embeddings(tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-  LE = torch.stack([against, discuss, favor, unrelated]).detach()
-  def compute_preds(preds):
+def get_compute_preds(args, tokenizer, model, datasets):
+  if type(datasets) != list:
+    datasets = [datasets]
+  embeded_tokens = []
+  for ds in datasets:
+    processor = PROCESSORS[args.task_name][ds]()
+    labels = processor.get_labels()
+    for label in labels:
+      lab_embed = torch.mean(model.roberta.embeddings(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
+      embeded_tokens.append(lab_embed)
+  LE = torch.stack(embeded_tokens).detach()
+  def compute_preds(preds, shifts, ends):
+    output = torch.zeros(preds.shape[0], dtype=torch.long)
     scores = (preds @ LE.T)
-    preds = torch.max(scores, axis=1)[1]
-    return preds
+    for i, (score, shift, end) in enumerate(zip(scores, shifts, ends)):
+      output[i] = torch.max(score[shift:end], axis=0)[1]
+    return output
   return compute_preds
 
-def get_compute_loss(tokenizer, model, args):
-  aga_tok = tokenizer.encode('against', add_special_tokens=False, return_tensors='pt').to(model.device)
-  dis_tok = tokenizer.encode('discussing', add_special_tokens=False, return_tensors='pt').to(model.device)
-  fav_tok = tokenizer.encode('in favour', add_special_tokens=False, return_tensors='pt').to(model.device)
-  unr_tok = tokenizer.encode('unrelated to', add_special_tokens=False, return_tensors='pt').to(model.device)
+def get_compute_loss(args, tokenizer, model, datasets):
+  toked_labels = []
+  if type(datasets) != list:
+    datasets = [datasets]
+  for ds in datasets:
+    processor = PROCESSORS[args.task_name][ds]()
+    labels = processor.get_labels()
+    for label in labels:
+      lab_tok = tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device)
+      toked_labels.append(lab_tok)
 
   if args.loss_fn == 'cross_entropy':
-    def compute_loss(model, preds, labels):
-      against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
-      discuss = torch.mean(model.roberta.embeddings(dis_tok)[0], axis=0)
-      favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
-      unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
+    def compute_loss(model, preds, labels, shifts, ends):
+      embeded_labels = []
+      for label in toked_labels:
+        embed = torch.mean(model.roberta.embeddings(label)[0], axis=0)
+        embeded_labels.append(embed)
+      LE = torch.stack(embeded_labels).detach()
 
-      LE = torch.stack([against, discuss, favor, unrelated]).detach()
       scores = (preds @ LE.T).permute(0, 2, 1)
       loss = torch.nn.CrossEntropyLoss(ignore_index=-100)(scores, labels)
       return loss
   elif args.loss_fn == 'bce':
     bce_loss = torch.nn.BCEWithLogitsLoss()
-    def compute_loss(model, preds, labels):
-      against = torch.mean(model.roberta.embeddings(aga_tok)[0], axis=0)
-      discuss = torch.mean(model.roberta.embeddings(dis_tok)[0], axis=0)
-      favor = torch.mean(model.roberta.embeddings(fav_tok)[0], axis=0)
-      unrelated = torch.mean(model.roberta.embeddings(unr_tok)[0], axis=0)
-      LE = torch.stack([against, discuss, favor, unrelated]).detach()
+    def compute_loss(model, preds, labels, shifts, ends):
+      embeded_labels = []
+      for label in toked_labels:
+        embed = torch.mean(model.roberta.embeddings(label)[0], axis=0)
+        embeded_labels.append(embed)
+      LE = torch.stack(embeded_labels).detach()
+      n_labels = len(embeded_labels)
 
       scores = (preds @ LE.T).permute(0, 2, 1)
       pos = labels != -100
       labels = labels[pos]
       pos = pos.unsqueeze(1)
-      pos = pos.expand(-1,4,-1)
-      scores = scores[pos].reshape(-1, 4)
+      pos = pos.expand(-1,n_labels,-1)
+      scores = scores[pos].reshape(-1, n_labels)
 
       loss = 0
-      for i in range(3):
+      for i in range(n_labels):
         idx = labels == i
         sc = scores[:, i][idx]
         if sc.shape[0] >= 1:
           loss += bce_loss(sc, torch.ones_like(sc))
+
         idx_n = labels != i
+        idx_n = torch.logical_and(idx_n, shifts <= i)
+        idx_n = torch.logical_and(idx_n, ends > i)
         sc = scores[:, i][idx_n]
         if sc.shape[0] >= 1:
           loss += bce_loss(sc, torch.zeros_like(sc))
@@ -182,7 +199,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   if args.local_rank in [-1, 0]:
     tb_writer = SummaryWriter(f'runs/{args.output_dir.split("/")[-1]}')
 
-  compute_loss = get_compute_loss(tokenizer, model, args)
+  datasets = args.train_dataset
+  compute_loss = get_compute_loss(args, tokenizer, model, datasets)
 
   args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
   train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
@@ -284,16 +302,21 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
       model.train()
       batch = tuple(t.to(args.device) for t in batch)
       inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
+      all_shifts = batch[4]
+      all_ends = batch[5]
       if args.mlm:
-        inputs['labels'] = batch[4]
+        inputs['labels'] = batch[6]
       if args.model_type != "distilbert":
         inputs["token_type_ids"] = (
           batch[2] if args.model_type in ["bert"] else None
         )  # XLM don't use segment_ids
       if args.model_type == "xlm":
-        inputs["langs"] = batch[4]
+        if args.mlm:
+          inputs["langs"] = batch[7]
+        else:
+          inputs["langs"] = batch[6]
       outputs = model(**inputs, output_hidden_states=True)
-      loss = compute_loss(model, outputs['hidden_states'][-1], batch[3])
+      loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
 
       if args.mlm:
         mlm_loss = outputs['loss']
@@ -435,15 +458,19 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
   eval_task_names = (args.task_name,)
   eval_outputs_dirs = (args.output_dir,)
 
-  compute_preds = get_compute_preds(tokenizer, model)
-  compute_loss = get_compute_loss(tokenizer, model, args)
+  compute_preds = get_compute_preds(args, tokenizer, model, dataset)
+  compute_loss = get_compute_loss(args, tokenizer, model, dataset)
 
   results = {}
   for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
     if type(dataset) == list:
       eval_datasets = []
+      shift = 0
       for ds in dataset:
-        eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True)
+        eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True, shift=shift)
+        processor = PROCESSORS[args.task_name][ds]()
+        n_labels = len(processor.get_labels())
+        shift += n_labels
         eval_datasets.append(eval_dataset)
       eval_dataset = ConcatDataset(eval_datasets)
     else:
@@ -476,27 +503,32 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
       with torch.no_grad():
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
+        all_shifts = batch[4]
+        all_ends = batch[5]
         if args.model_type != "distilbert":
           inputs["token_type_ids"] = (
             batch[2] if args.model_type in ["bert"] else None
           )  # XLM and DistilBERT don't use segment_ids
         if args.model_type == "xlm":
-          inputs["langs"] = batch[4]
+          if args.mlm:
+            inputs["langs"] = batch[7]
+          else:
+            inputs["langs"] = batch[6]
         outputs = model(**inputs, output_hidden_states=True)
         logits = outputs['hidden_states'][-1]
 
-        tmp_eval_loss = compute_loss(model, logits, batch[3])
+        tmp_eval_loss = compute_loss(model, logits, batch[3], all_shifts, all_ends)
         eval_loss += tmp_eval_loss.mean().item()
 
         l_mask = batch[3] == -100
       nb_eval_steps += 1
       if preds is None:
-        preds = compute_preds(logits[~l_mask]).detach().cpu().numpy()
+        preds = compute_preds(logits[~l_mask], all_shifts, all_ends).detach().cpu().numpy()
         out_label_ids = inputs["labels"][~l_mask].detach().cpu().numpy()
         if output_file:
           sentences = inputs["input_ids"].detach().cpu().numpy()
       else:
-        preds = np.append(preds, compute_preds(logits[~l_mask]).detach().cpu().numpy(), axis=0)
+        preds = np.append(preds, compute_preds(logits[~l_mask], all_shifts, all_ends).detach().cpu().numpy(), axis=0)
         out_label_ids = np.append(out_label_ids, inputs["labels"][~l_mask].detach().cpu().numpy(), axis=0)
         if output_file:
           sentences = np.append(sentences, inputs["input_ids"].detach().cpu().numpy(), axis=0)
@@ -533,13 +565,14 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
   return results
 
 
-def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2id=None, evaluate=False):
+def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2id=None, evaluate=False, shift=0):
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
   processor = PROCESSORS[task][dataset]()
+  n_labels = len(processor.get_labels())
   language = processor.language
   output_mode = "classification"
   # Load data features from cache or dataset file
@@ -606,24 +639,26 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
   all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
   if output_mode == "classification":
-    all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    all_labels = torch.tensor([[i if i == -100 else i + shift for i in f.label] for f in features], dtype=torch.long)
   else:
     raise ValueError("No other `output_mode` for {}.".format(args.task_name))
   if args.mlm:
     all_mlm_labels = torch.tensor([f.mlm_labels for f in features], dtype=torch.long)
+  all_shifts = torch.tensor([shift for f in features], dtype=torch.long)
+  all_ends = torch.tensor([shift+n_labels for f in features], dtype=torch.long)
 
   if args.mlm:
     if args.model_type == 'xlm':
       all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_mlm_labels, all_langs)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_mlm_labels, all_langs)
     else:
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_mlm_labels)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_mlm_labels)
   else:
     if args.model_type == 'xlm':
       all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_langs)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_langs)
     else:
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends)
   return dataset
 
 
@@ -916,9 +951,14 @@ def main():
       )
     model.to(args.device)
     train_datasets = []
+    shift = 0
     for lang, train_ds in zip(args.train_language, args.train_dataset):
-      train_dataset = load_and_cache_examples(args, args.task_name, train_ds, tokenizer, split=args.train_split, lang2id=lang2id, evaluate=False)
+      train_dataset = load_and_cache_examples(args, args.task_name, train_ds, tokenizer, split=args.train_split, lang2id=lang2id, evaluate=False, shift=shift)
       train_datasets.append(train_dataset)
+
+      processor = PROCESSORS[args.task_name][train_ds]()
+      n_labels = len(processor.get_labels())
+      shift += n_labels
     train_dataset = ConcatDataset(train_datasets)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)

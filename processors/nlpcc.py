@@ -29,6 +29,10 @@ class NLPCCProcessor(DataProcessor):
     """Processor for the NLPCC dataset.
     Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
 
+    label_map = {'AGAINST': 'against',
+                 'DISCUSS': 'discussing',
+                 'FAVOR': 'in favour',
+                 'NONE': 'neutral'}
     language = 'zh'
 
     def __init__(self):
@@ -44,11 +48,9 @@ class NLPCCProcessor(DataProcessor):
         topic = line[1]
         text = line[2]
         if split == 'test' and len(line) != 4:
-          label = "UNRELATED"
+          label = "neutral"
         else:
-          label = str(line[3].strip())
-          if label == 'NONE':
-            label = 'UNRELATED'
+          label = NLPCCProcessor.label_map[str(line[3].strip())]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
         examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
       return examples
@@ -64,7 +66,7 @@ class NLPCCProcessor(DataProcessor):
 
     def get_labels(self):
         """See base class."""
-        return ["AGAINST", "DISCUSS", "FAVOR", "UNRELATED"]
+        return ["against", "in favour", "neutral"]  # changing labels require overwriting cache
 
 
 nlpcc_processors = {
