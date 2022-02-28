@@ -312,10 +312,10 @@ def convert_stance_examples_to_mlm_features(
     if  text_len + topic_len <= working_len:
       pass
     elif text_len > working_len/2 and topic_len > working_len/2:
-      toked_text['input_ids'] = toked_text['input_ids'][:working_len/2]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len/2]
-      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len/2]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len/2]
+      toked_text['input_ids'] = toked_text['input_ids'][:int(working_len/2)]
+      toked_text['attention_mask'] = toked_text['attention_mask'][:int(working_len/2)]
+      toked_topic['input_ids'] = toked_topic['input_ids'][:int(working_len/2)]
+      toked_topic['attention_mask'] = toked_topic['attention_mask'][:int(working_len/2)]
     elif text_len > topic_len:
       toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
       toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]

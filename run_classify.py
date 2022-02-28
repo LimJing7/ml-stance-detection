@@ -128,6 +128,24 @@ def get_compute_loss(args, tokenizer, model, datasets):
       lab_tok = tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device)
       toked_labels.append(lab_tok)
 
+  if args.negative_samples > 0:
+    negative_labels = {}
+    for ds in datasets:
+      processor = PROCESSORS[args.task_name][ds]()
+      labels = processor.get_labels()
+      negative_labels[ds] = {lab:set() for lab in labels}
+      for label, syns in args.synonyms[ds].items():
+        for key in negative_labels[ds].keys():
+          if key != label:
+            toked = [tokenizer.encode(i, add_special_tokens=False, return_tensors='pt').to(model.device) for i in syns]
+            negative_labels[ds][key].update(toked)
+    sorted_negative_labels = []
+    for ds in datasets:
+      processor = PROCESSORS[args.task_name][ds]()
+      labels = processor.get_labels()
+      for label in labels:
+        sorted_negative_labels.append(negative_labels[ds][label])
+
   if args.loss_fn == 'cross_entropy':
     def compute_loss(model, preds, labels, shifts, ends):
       embeded_labels = []
@@ -138,6 +156,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
 
       scores = (preds @ LE.T).permute(0, 2, 1)
       loss = torch.nn.CrossEntropyLoss(ignore_index=-100)(scores, labels)
+
+      if args.negative_samples > 0:
+        raise NotImplementedError
       return loss
   elif args.loss_fn == 'bce':
     bce_loss = torch.nn.BCEWithLogitsLoss()
@@ -158,17 +179,37 @@ def get_compute_loss(args, tokenizer, model, datasets):
 
       loss = 0
       for i in range(n_labels):
+        # positive label
         idx = labels == i
         sc = scores[:, i][idx]
         if sc.shape[0] >= 1:
           loss += bce_loss(sc, torch.ones_like(sc))
 
+        # negative sampling
+        if args.negative_samples > 0:
+          n_syns = min(args.negative_samples, len(sorted_negative_labels[i]))
+          if n_syns > 0:
+            neg_samples = random.sample(sorted_negative_labels[i], k=n_syns)
+            embeded_negs = []
+            for neg_label in neg_samples:
+              embed_neg = torch.mean(model.roberta.embeddings(neg_label)[0], axis=0)
+              embeded_negs.append(embed_neg)
+            neg_LE = torch.stack(embeded_negs).detach()
+            neg_scores = (preds @ neg_LE.T).permute(0, 2, 1)
+            neg_pos = pos[:, 0:1, :].expand(-1, n_syns, -1)
+            neg_scores = neg_scores[neg_pos].reshape(-1, n_syns)
+            for i_syns in range(n_syns):
+              sc = neg_scores[:, i_syns][idx]
+              loss += bce_loss(sc, torch.zeros_like(sc))
+
+        # negative labels
         idx_n = labels != i
         idx_n = torch.logical_and(idx_n, shifts <= i)
         idx_n = torch.logical_and(idx_n, ends > i)
         sc = scores[:, i][idx_n]
         if sc.shape[0] >= 1:
           loss += bce_loss(sc, torch.zeros_like(sc))
+
 
       return loss
 
@@ -760,6 +801,8 @@ def main():
   parser.add_argument('--mlm', action='store_true', help="use mlm in loss")
   parser.add_argument('--mlm_probability', default=0.105)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
+  parser.add_argument('--negative_samples', default=0, type=int, help="Number of negative samples to draw")
+  parser.add_argument('--synonyms_file', default='./synonyms.pkl', help="File containing synonyms")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -892,6 +935,9 @@ def main():
   args.output_mode = "classification"
   label_list = processor.get_labels()
   num_labels = len(label_list)
+
+  if args.negative_samples > 0:
+    args.synonyms = pickle.load(open(args.synonyms_file, 'rb'))
 
   # Load pretrained model and tokenizer
   # Make sure only the first process in distributed training loads model & vocab
