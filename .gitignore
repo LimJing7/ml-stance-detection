@@ -130,3 +130,6 @@ dmypy.json
 
 # Tensorboard folder
 runs/
+
+# VS Code Workspace
+*.code-workspace
