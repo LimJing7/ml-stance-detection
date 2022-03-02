@@ -394,7 +394,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 
           # Only evaluate on single GPU otherwise metrics may not average well
           if (args.local_rank == -1 and args.evaluate_during_training):
-            tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
+            if args.mlm:
+              tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
