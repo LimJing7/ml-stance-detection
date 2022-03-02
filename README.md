@@ -238,7 +238,7 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 | Learning Rate          |                                                                                                   1e-5 |
 | Number of Train Epochs |                                                                                                      5 |
 | Logging / Save steps   |                                                                                                    500 |
-| Negative Samples       |                                                                                                      2 |
+| Negative Samples (wo wiki syns) |                                                                                             2 |
 | Accuracy               |                                                                                                   0.46 |
 | Macro F1               |                                                                                                   0.41 |
 
@@ -249,9 +249,32 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 | Learning Rate          |                                                                                                   1e-5 |
 | Number of Train Epochs |                                                                                                      5 |
 | Logging / Save steps   |                                                                                                    500 |
-| Negative Samples       |                                                                                                      2 |
+| Negative Samples (wo wiki syns) |                                                                                             2 |
 | Accuracy               |                                                                                                   0.41 |
 | Macro F1               |                                                                                                   0.36 |
+
+| Attribute              | Value                                                                                                  |
+|------------------------|--------------------------------------------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6,<br> snopes, twitter2015, twitter2017, vast |
+| Test Dataset           |                                                                                                  nlpcc |
+| Learning Rate          |                                                                                                   1e-5 |
+| Number of Train Epochs |                                                                                                      5 |
+| Logging / Save steps   |                                                                                                    500 |
+| Negative Samples       |                                                                                                      2 |
+| Accuracy               |                                                                                                   0.47 |
+| Macro F1               |                                                                                                   0.41 |
+
+
+| Attribute              | Value                                                                                                  |
+|------------------------|--------------------------------------------------------------------------------------------------------|
+| Train Dataset          | arc, argmin, fnc1, iac1, ibmcs, perspectrum, semeval2016t6,<br> snopes, twitter2015, twitter2017, vast |
+| Test Dataset           |                                                                                       translated nlpcc |
+| Learning Rate          |                                                                                                   1e-5 |
+| Number of Train Epochs |                                                                                                      5 |
+| Logging / Save steps   |                                                                                                    500 |
+| Negative Samples       |                                                                                                      2 |
+| Accuracy               |                                                                                                   0.51 |
+| Macro F1               |                                                                                                   0.40 |
 
 ## Future Work
 - Add more datasets
