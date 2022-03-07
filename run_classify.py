@@ -63,6 +63,7 @@ from processors.perspectrum import PerspectrumProcessor
 from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
 from processors.snopes import SnopesProcessor
+from processors.trans_nlpcc import TransNLPCCProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
@@ -92,6 +93,7 @@ PROCESSORS = {
              'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
              'snopes': SnopesProcessor,
+             'trans_nlpcc': TransNLPCCProcessor,
              'twitter2015': Twitter2015Processor,
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor}
@@ -144,7 +146,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
       processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
       for label in labels:
-        sorted_negative_labels.append(negative_labels[ds][label])
+        sorted_negative_labels.append(list(negative_labels[ds][label]))
 
   if args.loss_fn == 'cross_entropy':
     def compute_loss(model, preds, labels, shifts, ends):
@@ -185,22 +187,22 @@ def get_compute_loss(args, tokenizer, model, datasets):
         if sc.shape[0] >= 1:
           loss += bce_loss(sc, torch.ones_like(sc))
 
-        # negative sampling
-        if args.negative_samples > 0:
-          n_syns = min(args.negative_samples, len(sorted_negative_labels[i]))
-          if n_syns > 0:
-            neg_samples = random.sample(sorted_negative_labels[i], k=n_syns)
-            embeded_negs = []
-            for neg_label in neg_samples:
-              embed_neg = torch.mean(model.roberta.embeddings(neg_label)[0], axis=0)
-              embeded_negs.append(embed_neg)
-            neg_LE = torch.stack(embeded_negs).detach()
-            neg_scores = (preds @ neg_LE.T).permute(0, 2, 1)
-            neg_pos = pos[:, 0:1, :].expand(-1, n_syns, -1)
-            neg_scores = neg_scores[neg_pos].reshape(-1, n_syns)
-            for i_syns in range(n_syns):
-              sc = neg_scores[:, i_syns][idx]
-              loss += bce_loss(sc, torch.zeros_like(sc))
+          # negative sampling
+          if args.negative_samples > 0:
+            n_syns = min(args.negative_samples, len(sorted_negative_labels[i]))
+            if n_syns > 0:
+              neg_samples = random.sample(sorted_negative_labels[i], k=n_syns)
+              embeded_negs = []
+              for neg_label in neg_samples:
+                embed_neg = torch.mean(model.roberta.embeddings(neg_label)[0], axis=0)
+                embeded_negs.append(embed_neg)
+              neg_LE = torch.stack(embeded_negs).detach()
+              neg_scores = (preds @ neg_LE.T).permute(0, 2, 1)
+              neg_pos = pos[:, 0:1, :].expand(-1, n_syns, -1)
+              neg_scores = neg_scores[neg_pos].reshape(-1, n_syns)
+              for i_syns in range(n_syns):
+                sc = neg_scores[:, i_syns][idx]
+                loss += bce_loss(sc, torch.zeros_like(sc))
 
         # negative labels
         idx_n = labels != i
