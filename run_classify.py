@@ -53,6 +53,7 @@ from processors.twitter2015 import Twitter2015Processor
 from processors.utils import (
   convert_stance_examples_to_mlm_features,
 )
+from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
 from processors.fnc1 import FNC1Processor
@@ -83,7 +84,8 @@ MODEL_CLASSES = {
 }
 
 PROCESSORS = {
-  'stance': {'arc': ARCProcessor,
+  'stance': {'ans': ANSProcessor,
+             'arc': ARCProcessor,
              'argmin': ArgMinProcessor,
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,

@@ -44,6 +44,8 @@ label_map = {'disagreeing with': 'disagree',
              'argument against': 'against',
              'argument for': 'for',
              'in favour': 'favour',
+             'contradiction of': 'contradiction',
+             'paraphrase of': 'paraphrase'
              }
 
 
