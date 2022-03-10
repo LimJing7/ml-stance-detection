@@ -165,8 +165,8 @@ def get_compute_loss(args, tokenizer, model, datasets):
         raise NotImplementedError
       return loss
   elif args.loss_fn == 'bce':
-    bce_loss = torch.nn.BCEWithLogitsLoss()
-    def compute_loss(model, preds, labels, shifts, ends):
+    bce_loss = torch.nn.BCEWithLogitsLoss(reduction='none')
+    def compute_loss(model, preds, labels, shifts, ends, weights=None):
       embeded_labels = []
       for label in toked_labels:
         embed = torch.mean(model.roberta.embeddings(label)[0], axis=0)
@@ -187,7 +187,10 @@ def get_compute_loss(args, tokenizer, model, datasets):
         idx = labels == i
         sc = scores[:, i][idx]
         if sc.shape[0] >= 1:
-          loss += bce_loss(sc, torch.ones_like(sc))
+          p_loss = bce_loss(sc, torch.ones_like(sc))
+          if args.ds_weights == 'multinomial' and weights is not None:
+            p_loss *= weights[idx]
+          loss += torch.mean(p_loss)
 
           # negative sampling
           if args.negative_samples > 0:
@@ -204,7 +207,10 @@ def get_compute_loss(args, tokenizer, model, datasets):
               neg_scores = neg_scores[neg_pos].reshape(-1, n_syns)
               for i_syns in range(n_syns):
                 sc = neg_scores[:, i_syns][idx]
-                loss += bce_loss(sc, torch.zeros_like(sc))
+                ns_loss = bce_loss(sc, torch.zeros_like(sc))
+                if args.ds_weights == 'multinomial' and weights is not None:
+                  ns_loss *= weights[idx]
+                loss += torch.mean(ns_loss)
 
         # negative labels
         idx_n = labels != i
@@ -212,8 +218,10 @@ def get_compute_loss(args, tokenizer, model, datasets):
         idx_n = torch.logical_and(idx_n, ends > i)
         sc = scores[:, i][idx_n]
         if sc.shape[0] >= 1:
-          loss += bce_loss(sc, torch.zeros_like(sc))
-
+          n_loss = bce_loss(sc, torch.zeros_like(sc))
+          if args.ds_weights == 'multinomial' and weights is not None:
+            n_loss *= weights[idx_n]
+          loss += torch.mean(n_loss)
 
       return loss
 
@@ -230,6 +238,14 @@ def compute_metrics(preds, labels):
   }
   return scores
 
+
+def compute_multinomial_ds_weights(args, datasets):
+  sizes = []
+  for ds in datasets:
+    sizes.append(len(ds))
+  p = sizes/np.sum(sizes)
+  q = p**args.ds_alpha / np.sum(p**args.ds_alpha)
+  return q
 
 def set_seed(args):
   random.seed(args.seed)
@@ -361,11 +377,18 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         else:
           inputs["langs"] = batch[6]
       outputs = model(**inputs, output_hidden_states=True)
-      loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
+      if args.ds_weights == 'multinomial':
+        ds_weights = batch[-1]
+        loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
+      else:
+        loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
 
       if args.mlm:
         mlm_loss = outputs['loss']
-        loss = args.alpha * loss + (1-args.alpha) * mlm_loss
+        if args.ds_weights == 'multinomial':
+          loss = args.alpha * loss + (1-args.alpha) * mlm_loss * batch[-1][0]  # not obv how to scale so just take the first one
+        else:
+          loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -807,6 +830,8 @@ def main():
   parser.add_argument('--mlm_probability', default=0.105)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument('--negative_samples', default=0, type=int, help="Number of negative samples to draw")
+  parser.add_argument('--ds_weights', default='equal', choices=['equal', 'multinomial'], help='how to weight the different datasets')
+  parser.add_argument('--ds_alpha', default=0.3, type=float, help='alpha for use in computing dataset weights')
   parser.add_argument('--synonyms_file', default='./synonyms.pkl', help="File containing synonyms")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
@@ -1010,6 +1035,16 @@ def main():
       processor = PROCESSORS[args.task_name][train_ds]()
       n_labels = len(processor.get_labels())
       shift += n_labels
+    if args.ds_weights == 'multinomial':
+      ds_weights = compute_multinomial_ds_weights(args, train_datasets)
+      weighted_train_datasets = []
+      for dataset, weight in zip(train_datasets, ds_weights):
+        ds_tensors = dataset.tensors
+        n_examples = ds_tensors[0].shape[0]
+        weight_tensor = torch.tensor(weight).repeat(n_examples)
+        new_train_dataset = TensorDataset(*ds_tensors, weight_tensor)
+        weighted_train_datasets.append(new_train_dataset)
+      train_datasets = weighted_train_datasets
     train_dataset = ConcatDataset(train_datasets)
     global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
