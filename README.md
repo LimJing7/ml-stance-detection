@@ -26,6 +26,10 @@ Synonyms are drawn from wordnet and wiktionary.
 Includes MLM loss into the objective.
 Uses an alpha parameter to weight the loss
 
+### Same vs Different Labels
+The datasets are either using their own labels or they can all share one set of labels. \
+To use the same labels switch to branch same_labels.
+
 ## Dataset weighting
 Equal: No weighting \
 Multinomial: weigh by the following formula \
