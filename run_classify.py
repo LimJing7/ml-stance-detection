@@ -646,7 +646,10 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
-  mlm = 'w_mlm' if args.mlm else 'no_mlm'
+  if args.mlm and not evaluate:
+    mlm = 'w_mlm'
+  else:
+    'no_mlm'
   cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
 
   cached_features_file = os.path.join(
@@ -691,7 +694,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
       pad_token_segment_id=0,
       lang2id=lang2id,
-      mlm=args.mlm,
+      mlm=args.mlm if not evaluate else False,
       mlm_probability=args.mlm_probability,
     )
     if args.local_rank in [-1, 0]:
