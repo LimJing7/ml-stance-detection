@@ -15,6 +15,8 @@ The model is given the above as input and asked to predict the mask token. We ta
 If the tokenized text and topic are too long, we truncate them to as even as possible.
 That is we truncate the longer input first. If when they are both the same length, we truncate one token from each at a time.
 
+We use a BCE loss for each label as we do not want to downweigh synonyms. This is in contrast to cross-entropy which down-weighs all labels other than the right one.
+
 ## Options
 ### Negative Sampling
 Uses the synonyms for negative labels as negative samples.
@@ -23,6 +25,11 @@ Synonyms are drawn from wordnet and wiktionary.
 ### MLM
 Includes MLM loss into the objective.
 Uses an alpha parameter to weight the loss
+
+## Dataset weighting
+Equal: No weighting \
+Multinomial: weigh by the following formula \
+<img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}"> where <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}"> and <img src="https://render.githubusercontent.com/render/math?math=n_i"> is the number of examples in that dataset
 
 
 ## Results
@@ -38,6 +45,13 @@ Uses an alpha parameter to weight the loss
 |-------------|:------------:|:--------:|:---------------:|:-----------------------:|
 | nlpcc       |     0.42     |   0.42   |       0.42      |           0.42          |
 | trans_nlpcc |     0.38     |   0.31   |       0.38      |           0.35          |
+
+### Using Multinomial
+|             | with nothing | with mlm | with 2 negative | with mlm and 2 negative |
+|-------------|:------------:|:--------:|:---------------:|:-----------------------:|
+| nlpcc       |     0.47     |          |                 |                         |
+| trans_nlpcc |     0.41     |          |                 |                         |
+
 
 
 ## Future Work
