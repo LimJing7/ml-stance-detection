@@ -14,12 +14,14 @@ Statistics for each dataset can be found in a separate [file](./datasets_statist
 ## Details
 
 ### Approach
+
+We are following the method found in [Hardalov et al.] (https://arxiv.org/abs/2109.06050).
+
 We use the following pattern: 'The stance of the following \<text\>is \<mask_token\> the \<topic\>'.
 An example after we put it into the pattern looks like this following:
-```
-The stance of the following And what will police do with this information? Try to make sure the patient has no weapons? (No access to local gun shows or other private sellers?) The patient has committed no crime so he (yes, he) cannot be arrested. In exchange for this, we have ensured that the patient will end therapy and never seek help again. Is this a good trade for society? I think not. is \<mask_token\> the No, the laws should
-not be toughened.
-```
+
+> The stance of the following And what will police do with this information? Try to make sure the patient has no weapons? (No access to local gun shows or other private sellers?) The patient has committed no crime so he (yes, he) cannot be arrested. In exchange for this, we have ensured that the patient will end therapy and never seek help again. Is this a good trade for society? I think not. is \<mask_token\> the No, the laws should not be toughened.
+
 The model is given the above as input and asked to predict the mask token. We take the last hidden state at the mask location and dot product it with the mean embeddings for each of the labels (can be multiple tokens) to find the closest label.
 
 If the tokenized text and topic are too long, we truncate them to be as even as possible.
@@ -69,6 +71,8 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 For the results on this page, we are only listing results that come from training on all english datasets and evaluating on the nlpcc development set. We also evaluated on the nlpcc development set after translating them from chinese to english using google translate as a baseline (trans_nlpcc).
 
 For single dataset results, refer to [single_dataset_results.md](./single_dataset_results.md). However, note that some of them might be outdated and trained using previous versions of the code.
+
+For comparison, the macro-F1 in Hardalov et al. is 0.458.
 
 
 ### Different Labels
