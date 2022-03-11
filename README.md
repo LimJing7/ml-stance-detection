@@ -1,7 +1,7 @@
 # Multilingual Stance Detection
 
 We are tackling the problem of stance detection. Given a text and a topic, we want to predict the stance of the text towards the topic.
-In this repo, we are interested in the problem of 0-shot language transfer for stance detection. That is we train on stance detection using English datasets before performing evaluation on non-English datasets.
+In this repo, we are interested in the problem of zero-shot language transfer for stance detection. That is we train on stance detection using English datasets before performing evaluation on non-English datasets.
 
 ## Datasets Used
 Unless otherwise stated, English datasets are from [mdl-stance-robustness](https://github.com/UKPLab/mdl-stance-robustness). \
@@ -39,7 +39,23 @@ Includes MLM loss into the objective.
 Uses an alpha parameter to weigh the loss.
 
 #### Same vs Different Labels
-The datasets are either using their own labels or they can all share one set of labels. \
+The datasets are either using their own labels. For example:
+- arc:
+  - disagreeing with
+  - discussing
+  - agreeing with
+  - unrelated to
+- twitter2017:
+  - negative
+  - positive
+  - neutral
+
+Or they can all share one set of labels:
+- against
+- discussing
+- in favour
+- unrelated to
+
 To use the same labels switch to branch same_labels.
 
 #### Dataset weighting
