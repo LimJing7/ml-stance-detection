@@ -60,11 +60,14 @@ To use the same labels switch to branch same_labels.
 
 #### Dataset weighting
 We can add a weighting term to the loss function for each dataset to change the influence of each dataset. \
-Equal: Equal weighting among all datasets results in a lower influence for smaller datasets. \
-Scaled: compute a weighing from the size of the datasets. \
-Let <img src="https://render.githubusercontent.com/render/math?math=n_i"> be the number of examples in that dataset and <img src="https://render.githubusercontent.com/render/math?math=0\le\alpha\le1"> be a parameter we choose.
-1. Compute <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}">
-2. Compute the dataset weights <img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}">
+- Equal
+  -  Equal weighting among all datasets results in a lower influence for smaller datasets. \
+- Scaled
+  - compute a weighing from the size of the datasets.
+  - Using the following scaling equation, we are able to increase the influence of the smaller datasets while still letting the larger datasets have a greater influence.
+  - Let <img src="https://render.githubusercontent.com/render/math?math=n_i"> be the number of examples in that dataset and <img src="https://render.githubusercontent.com/render/math?math=0\le\alpha\le1"> be a parameter we choose.
+  1. Compute <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}">
+  2. Compute the dataset weights <img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}">
 
 ### Hyperparameters
 We have included the hyperparameters we used for the below experiments here:
