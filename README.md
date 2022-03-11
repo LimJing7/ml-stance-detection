@@ -59,11 +59,11 @@ Or they can all share one set of labels:
 To use the same labels switch to branch same_labels.
 
 #### Dataset weighting
-We can add a weighting term to the loss function for each dataset to change the influence of each dataset. \
+We can add a weighting term to the loss function for each dataset to change the influence of each dataset.
 - Equal
-  -  Equal weighting among all datasets results in a lower influence for smaller datasets. \
+  -  Equal weighting among all datasets results in a lower influence for smaller datasets.
 - Scaled
-  - compute a weighing from the size of the datasets.
+  - Compute a scaled weighting from the size of the datasets.
   - Using the following scaling equation, we are able to increase the influence of the smaller datasets while still letting the larger datasets have a greater influence.
   - Let <img src="https://render.githubusercontent.com/render/math?math=n_i"> be the number of examples in that dataset and <img src="https://render.githubusercontent.com/render/math?math=0\le\alpha\le1"> be a parameter we choose.
   1. Compute <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}">
