@@ -579,10 +579,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
             batch[2] if args.model_type in ["bert"] else None
           )  # XLM and DistilBERT don't use segment_ids
         if args.model_type == "xlm":
-          if args.mlm:
-            inputs["langs"] = batch[7]
-          else:
-            inputs["langs"] = batch[6]
+          inputs["langs"] = batch[6]
         outputs = model(**inputs, output_hidden_states=True)
         logits = outputs['hidden_states'][-1]
 
@@ -649,7 +646,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   if args.mlm and not evaluate:
     mlm = 'w_mlm'
   else:
-    'no_mlm'
+    mlm = 'no_mlm'
   cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
 
   cached_features_file = os.path.join(
@@ -714,12 +711,12 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     all_labels = torch.tensor([[i if i == -100 else i + shift for i in f.label] for f in features], dtype=torch.long)
   else:
     raise ValueError("No other `output_mode` for {}.".format(args.task_name))
-  if args.mlm:
+  if args.mlm and not evaluate:
     all_mlm_labels = torch.tensor([f.mlm_labels for f in features], dtype=torch.long)
   all_shifts = torch.tensor([shift for f in features], dtype=torch.long)
   all_ends = torch.tensor([shift+n_labels for f in features], dtype=torch.long)
 
-  if args.mlm:
+  if args.mlm and not evaluate:
     if args.model_type == 'xlm':
       all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
       dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_mlm_labels, all_langs)
