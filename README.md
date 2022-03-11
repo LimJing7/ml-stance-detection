@@ -59,10 +59,12 @@ Or they can all share one set of labels:
 To use the same labels switch to branch same_labels.
 
 #### Dataset weighting
-Equal: No weighting \
-Multinomial: weigh by the following formula \
-<img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}"> \
-where <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}"> and <img src="https://render.githubusercontent.com/render/math?math=n_i"> is the number of examples in that dataset
+We can add a weighting term to the loss function for each dataset to change the influence of each dataset. \
+Equal: Equal weighting among all datasets results in a lower influence for smaller datasets. \
+Scaled: compute a weighing from the size of the datasets. \
+Let <img src="https://render.githubusercontent.com/render/math?math=n_i"> be the number of examples in that dataset and <img src="https://render.githubusercontent.com/render/math?math=0\le\alpha\le1"> be a parameter we choose.
+1. Compute <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}">
+2. Compute the dataset weights <img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}">
 
 ### Hyperparameters
 We have included the hyperparameters we used for the below experiments here:
@@ -86,7 +88,7 @@ CUDA_VISIBLE_DEVICES=3 python run_classify.py --data_dir ~/stance_datasets --mod
 ## Results
 For the results on this page, we are only listing results that come from training on all english datasets and evaluating on the nlpcc development set. We also evaluated on the nlpcc development set after translating them from chinese to english using google translate as a baseline (trans_nlpcc).
 
-For single dataset results, refer to [single_dataset_results.md](./single_dataset_results.md). However, note that some of them might be outdated and trained using previous versions of the code.
+For results from supervised training on in-domain data, refer to [single_dataset_results.md](./single_dataset_results.md). However, note that some of them might be outdated and trained using previous versions of the code.
 
 For comparison, the macro-F1 in Hardalov et al. is 0.458.
 
@@ -104,7 +106,7 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 | nlpcc       | 0.42 |   0.42   |       0.42      |           0.42          |
 | trans_nlpcc | 0.38 |   0.31   |       0.38      |           0.35          |
 
-### Using Multinomial
+### Using the scaled dataset weighing scheme
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
 |-------------|:----:|:--------:|:---------------:|:-----------------------:|
 | nlpcc       | 0.47 |          |       0.34      |                         |
