@@ -117,7 +117,7 @@ def get_compute_preds(args, tokenizer, model, datasets):
     output = torch.zeros(preds.shape[0], dtype=torch.long)
     scores = (preds @ LE.T)
     for i, (score, shift, end) in enumerate(zip(scores, shifts, ends)):
-      output[i] = torch.max(score[shift:end], axis=0)[1]
+      output[i] = torch.max(score[shift:end], axis=0)[1] + shift
     return output
   return compute_preds
 
