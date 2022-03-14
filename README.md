@@ -112,8 +112,8 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 ### Using the scaled dataset weighing scheme
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
 |-------------|:----:|:--------:|:---------------:|:-----------------------:|
-| nlpcc       | 0.47 |          |       0.34      |                         |
-| trans_nlpcc | 0.41 |          |       0.28      |                         |
+| nlpcc       | 0.47 |   0.43   |       0.47      |           0.45          |
+| trans_nlpcc | 0.41 |   0.39   |       0.43      |           0.39          |
 
 
 ## Future Work
