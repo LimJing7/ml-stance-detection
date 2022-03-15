@@ -188,7 +188,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
         sc = scores[:, i][idx]
         if sc.shape[0] >= 1:
           p_loss = bce_loss(sc, torch.ones_like(sc))
-          if args.ds_weights == 'multinomial' and weights is not None:
+          if args.ds_weights != 'equal' and weights is not None:
             p_loss *= weights[idx]
           loss += torch.mean(p_loss)
 
@@ -208,7 +208,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
               for i_syns in range(n_syns):
                 sc = neg_scores[:, i_syns][idx]
                 ns_loss = bce_loss(sc, torch.zeros_like(sc))
-                if args.ds_weights == 'multinomial' and weights is not None:
+                if args.ds_weights != 'equal' and weights is not None:
                   ns_loss *= weights[idx]
                 loss += torch.mean(ns_loss)
 
@@ -219,7 +219,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
         sc = scores[:, i][idx_n]
         if sc.shape[0] >= 1:
           n_loss = bce_loss(sc, torch.zeros_like(sc))
-          if args.ds_weights == 'multinomial' and weights is not None:
+          if args.ds_weights != 'equal' and weights is not None:
             n_loss *= weights[idx_n]
           loss += torch.mean(n_loss)
 
@@ -239,13 +239,24 @@ def compute_metrics(preds, labels):
   return scores
 
 
-def compute_multinomial_ds_weights(args, datasets):
+def compute_ds_weights(args, datasets):
   sizes = []
   for ds in datasets:
     sizes.append(len(ds))
   p = sizes/np.sum(sizes)
   q = p**args.ds_alpha / np.sum(p**args.ds_alpha)
-  return q
+  if args.ds_weights == 'multinomial':
+    return q
+  elif args.ds_weights == 'scaled':
+    return q * len(sizes)
+  elif args.ds_weights == 'inverse_scaled':
+    return 1 / (q * len(sizes))
+  elif args.ds_weights == 'random':
+    un_normed = np.random.normal(scale=0.1, size=len(sizes))
+    q = torch.softmax(torch.tensor(un_normed), dim=0).numpy()
+    return q * len(sizes)
+  else:
+    raise NotImplementedError
 
 def set_seed(args):
   random.seed(args.seed)
@@ -377,7 +388,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         else:
           inputs["langs"] = batch[6]
       outputs = model(**inputs, output_hidden_states=True)
-      if args.ds_weights == 'multinomial':
+      if args.ds_weights != 'equal':
         ds_weights = batch[-1]
         loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
       else:
@@ -385,7 +396,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
 
       if args.mlm:
         mlm_loss = outputs['loss']
-        if args.ds_weights == 'multinomial':
+        if args.ds_weights != 'equal':
           loss = args.alpha * loss + (1-args.alpha) * mlm_loss * batch[-1][0]  # not obv how to scale so just take the first one
         else:
           loss = args.alpha * loss + (1-args.alpha) * mlm_loss
@@ -830,7 +841,7 @@ def main():
   parser.add_argument('--mlm_probability', default=0.105)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument('--negative_samples', default=0, type=int, help="Number of negative samples to draw")
-  parser.add_argument('--ds_weights', default='equal', choices=['equal', 'multinomial'], help='how to weight the different datasets')
+  parser.add_argument('--ds_weights', default='equal', choices=['equal', 'inverse_scaled', 'multinomial', 'random', 'scaled'], help='how to weight the different datasets')
   parser.add_argument('--ds_alpha', default=0.3, type=float, help='alpha for use in computing dataset weights')
   parser.add_argument('--synonyms_file', default='./synonyms.pkl', help="File containing synonyms")
   parser.add_argument(
@@ -1035,8 +1046,8 @@ def main():
       processor = PROCESSORS[args.task_name][train_ds]()
       n_labels = len(processor.get_labels())
       shift += n_labels
-    if args.ds_weights == 'multinomial':
-      ds_weights = compute_multinomial_ds_weights(args, train_datasets)
+    if args.ds_weights != 'equal':
+      ds_weights = compute_ds_weights(args, train_datasets)
       weighted_train_datasets = []
       for dataset, weight in zip(train_datasets, ds_weights):
         ds_tensors = dataset.tensors
