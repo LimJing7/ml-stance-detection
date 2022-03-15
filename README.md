@@ -64,10 +64,16 @@ We can add a weighting term to the loss function for each dataset to change the 
   -  Equal weighting among all datasets results in a lower influence for smaller datasets.
 - Scaled
   - Compute a scaled weighting from the size of the datasets.
-  - Using the following scaling equation, we are able to increase the influence of the smaller datasets while still letting the larger datasets have a greater influence.
+  - Using the following scaling equation, we are able to increase the influence of the larger datasets.
   - Let <img src="https://render.githubusercontent.com/render/math?math=n_i"> be the number of examples in that dataset and <img src="https://render.githubusercontent.com/render/math?math=0\le\alpha\le1"> be a parameter we choose.
   1. Compute <img src="https://render.githubusercontent.com/render/math?math=p_i = \frac{n_i}{\sum_{k=1}^N n_k}">
   2. Compute the dataset weights <img src="https://render.githubusercontent.com/render/math?math=q_i = \frac{p_i^\alpha}{\sum_{j=1}^N p_j^\alpha}">
+  3. Multiply the weights by the number of datasets used for training
+- Inverse Scaled
+  - Compute the dataset weights in the same way as in "scaled" but instead of using that as a multiplier, use it as a divisor.
+  - This allows us to upweigh the influence of the smaller datasets while still letting the larger datasets have a greater influence.
+- Uncorrected Scaled
+  - Compute dataset weights in the same way as in "scaled" but without step 3.
 
 ### Hyperparameters
 We have included the hyperparameters we used for the below experiments here:
@@ -102,18 +108,26 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 | nlpcc       | 0.43 |   0.42   |       0.43      |           0.42          |
 | trans_nlpcc | 0.39 |   0.40   |       0.39      |           0.42          |
 
-
 ### Same Labels
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
 |-------------|:----:|:--------:|:---------------:|:-----------------------:|
 | nlpcc       | 0.42 |   0.42   |       0.42      |           0.42          |
 | trans_nlpcc | 0.38 |   0.31   |       0.38      |           0.35          |
 
-### Using the scaled dataset weighing scheme
+
+### Using the uncorrected scaled dataset weighing scheme
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
 |-------------|:----:|:--------:|:---------------:|:-----------------------:|
 | nlpcc       | 0.47 |   0.43   |       0.47      |           0.45          |
 | trans_nlpcc | 0.41 |   0.39   |       0.43      |           0.39          |
+
+
+### Compare different dataset weighing schemes
+Using 2 negative
+|             | Equal | Scaled | Inverse Scaled | Uncorrected Scaled | Scaled with smaller LR | Random |
+|-------------|:-----:|:------:|:--------------:|:------------------:|:----------------------:|:------:|
+| nlpcc       |  0.43 |  0.46  |    **0.47**    |      **0.47**      |          0.35          |  0.46  |
+| trans_nlpcc |  0.39 |  0.39  |    **0.44**    |        0.43        |          0.32          |  0.43  |
 
 
 ## Future Work
