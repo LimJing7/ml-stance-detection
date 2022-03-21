@@ -245,7 +245,7 @@ def compute_ds_weights(args, datasets):
     sizes.append(len(ds))
   p = sizes/np.sum(sizes)
   q = p**args.ds_alpha / np.sum(p**args.ds_alpha)
-  if args.ds_weights == 'multinomial':
+  if args.ds_weights == 'uncorrected_scaled':
     return q
   elif args.ds_weights == 'scaled':
     return q * len(sizes)
@@ -388,11 +388,26 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         else:
           inputs["langs"] = batch[6]
       outputs = model(**inputs, output_hidden_states=True)
-      if args.ds_weights != 'equal':
-        ds_weights = batch[-1]
-        loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
+
+      if args.robust is not None:
+        loss = 0
+        for _ in range(args.robust_samples):
+          if args.robust == 'rs_rp':
+            delta = (torch.rand_like(outputs['hidden_states'][-1]) - 0.5) * 2 * args.robust_size
+          else:
+            raise NotImplementedError
+          if args.ds_weights != 'equal':
+            ds_weights = batch[-1]
+            loss += compute_loss(model, outputs['hidden_states'][-1] + delta, batch[3], all_shifts, all_ends, ds_weights)
+          else:
+            loss += compute_loss(model, outputs['hidden_states'][-1] + delta, batch[3], all_shifts, all_ends)
+        loss /= args.robust_samples
       else:
-        loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
+        if args.ds_weights != 'equal':
+          ds_weights = batch[-1]
+          loss += compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
+        else:
+          loss += compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
 
       if args.mlm:
         mlm_loss = outputs['loss']
@@ -841,9 +856,12 @@ def main():
   parser.add_argument('--mlm_probability', default=0.105)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument('--negative_samples', default=0, type=int, help="Number of negative samples to draw")
-  parser.add_argument('--ds_weights', default='equal', choices=['equal', 'inverse_scaled', 'multinomial', 'random', 'scaled'], help='how to weight the different datasets')
-  parser.add_argument('--ds_alpha', default=0.3, type=float, help='alpha for use in computing dataset weights')
+  parser.add_argument('--ds_weights', default='equal', choices=['equal', 'inverse_scaled', 'uncorrected_scaled', 'random', 'scaled'], help='how to weight the different datasets')
+  parser.add_argument('--ds_alpha', default=0.3, type=float, help="alpha for use in computing dataset weights")
   parser.add_argument('--synonyms_file', default='./synonyms.pkl', help="File containing synonyms")
+  parser.add_argument('--robust', default='none', choices=['none', 'rs_rp'], help="implement robust training")
+  parser.add_argument('--robust_size', type=float, required=False, help="size of ball to search for robust training")
+  parser.add_argument('--robust_samples', type=int, default=3, help="number of samples to draw for robust training")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -979,6 +997,9 @@ def main():
 
   if args.negative_samples > 0:
     args.synonyms = pickle.load(open(args.synonyms_file, 'rb'))
+
+  if args.robust == 'none':
+    args.robust = None
 
   # Load pretrained model and tokenizer
   # Make sure only the first process in distributed training loads model & vocab
