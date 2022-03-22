@@ -124,14 +124,13 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 
 ### Compare different dataset weighing schemes
 Using 2 negative
-|             | Equal | Scaled | Inverse Scaled | Uncorrected Scaled | Scaled with smaller LR | Random |
-|-------------|:-----:|:------:|:--------------:|:------------------:|:----------------------:|:------:|
-| nlpcc       |  0.43 |  0.46  |    **0.47**    |      **0.47**      |          0.35          |  0.46  |
-| trans_nlpcc |  0.39 |  0.39  |    **0.44**    |        0.43        |          0.32          |  0.43  |
+|             |   Equal  | Scaled | Inverse Scaled | Uncorrected Scaled | Scaled with smaller LR | Random |
+|-------------|:--------:|:------:|:--------------:|:------------------:|:----------------------:|:------:|
+| nlpcc       | **0.49** |  0.47  |      0.47      |        0.47        |          0.35          |  0.46  |
+| trans_nlpcc |   0.40   |  0.39  |    **0.44**    |        0.43        |          0.32          |  0.43  |
 
 
 ## Future Work
 - Add more datasets
-- Use different weights for different datasets
 - End-task aware training
 - Meta end-task aware training
