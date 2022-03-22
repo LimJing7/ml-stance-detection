@@ -33,7 +33,7 @@ class TransNLPCCProcessor(DataProcessor):
                  'DISCUSS': 'discussing',
                  'FAVOR': 'in favour',
                  'NONE': 'neutral'}
-    language = 'zh'
+    language = 'en'
 
     def __init__(self):
         pass
