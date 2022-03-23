@@ -69,6 +69,8 @@ from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 
+from perturb import perturb
+
 try:
   from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -389,13 +391,10 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           inputs["langs"] = batch[6]
       outputs = model(**inputs, output_hidden_states=True)
 
-      if args.robust is not None:
+      if args.robust == 'rs_rp':
         loss = 0
         for _ in range(args.robust_samples):
-          if args.robust == 'rs_rp':
-            delta = (torch.rand_like(outputs['hidden_states'][-1]) - 0.5) * 2 * args.robust_size
-          else:
-            raise NotImplementedError
+          delta = (torch.rand_like(outputs['hidden_states'][-1]) - 0.5) * 2 * args.robust_size
           if args.ds_weights != 'equal':
             ds_weights = batch[-1]
             loss += compute_loss(model, outputs['hidden_states'][-1] + delta, batch[3], all_shifts, all_ends, ds_weights)
@@ -405,9 +404,9 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
       else:
         if args.ds_weights != 'equal':
           ds_weights = batch[-1]
-          loss += compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
+          loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
         else:
-          loss += compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
+          loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
 
       if args.mlm:
         mlm_loss = outputs['loss']
@@ -669,15 +668,24 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
-  if args.mlm and not evaluate:
-    mlm = 'w_mlm'
-  else:
+  if evaluate:
     mlm = 'no_mlm'
+    da = ''
+  else:
+    if args.mlm:
+      mlm = 'w_mlm'
+    else:
+      mlm = 'no_mlm'
+    if args.robust == 'rs_da':
+      da = f'_w_da_{args.robust_samples}'
+    else:
+      da = ''
+
   cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
 
   cached_features_file = os.path.join(
     args.data_dir,
-    "cached_{}_{}_{}_{}_{}_{}_{}{}".format(
+    "cached_{}_{}_{}_{}_{}_{}_{}{}{}".format(
       dataset,
       split,
       cache_model_name_or_path,
@@ -686,6 +694,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       str(language),
       mlm,
       lc,
+      da,
     ),
   )
   if os.path.exists(cached_features_file) and not args.overwrite_cache:
@@ -706,6 +715,9 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       examples = processor.get_pseudo_test_examples(args.data_dir)
     else:
       examples = processor.get_test_examples(args.data_dir)
+
+    if da == f'_w_da_{args.robust_samples}':
+      examples = perturb(examples, args.robust_samples, args.robust_neighbors)
 
     features = convert_stance_examples_to_mlm_features(
       examples,
@@ -859,9 +871,10 @@ def main():
   parser.add_argument('--ds_weights', default='equal', choices=['equal', 'inverse_scaled', 'uncorrected_scaled', 'random', 'scaled'], help='how to weight the different datasets')
   parser.add_argument('--ds_alpha', default=0.3, type=float, help="alpha for use in computing dataset weights")
   parser.add_argument('--synonyms_file', default='./synonyms.pkl', help="File containing synonyms")
-  parser.add_argument('--robust', default='none', choices=['none', 'rs_rp'], help="implement robust training")
+  parser.add_argument('--robust', default='none', choices=['none', 'rs_rp', 'rs_da'], help="implement robust training")
   parser.add_argument('--robust_size', type=float, required=False, help="size of ball to search for robust training")
   parser.add_argument('--robust_samples', type=int, default=3, help="number of samples to draw for robust training")
+  parser.add_argument('--robust_neighbors', default='./counterfitted_neighbors.json', help="file containing neighbors for robust perturbation")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1000,6 +1013,9 @@ def main():
 
   if args.robust == 'none':
     args.robust = None
+
+  if args.robust == 'rs_da':
+    args.gradient_accumulation_steps *= args.robust_samples
 
   # Load pretrained model and tokenizer
   # Make sure only the first process in distributed training loads model & vocab
