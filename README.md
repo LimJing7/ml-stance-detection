@@ -130,6 +130,11 @@ Using 2 negative
 | trans_nlpcc |   0.40   |  0.39  |    **0.44**    |        0.43        |          0.32          |  0.43  |
 
 
+### Compare different robust training schemes
+|             | RS-RP (0.01) | RS-RP (0.1) | RS-DA |   |
+|-------------|:------------:|:-----------:|:-----:|:-:|
+| nlpcc       |     0.50     |     0.48    |  0.48 |   |
+| trans_nlpcc |     0.43     |     0.41    |  0.43 |   |
 ## Future Work
 - Add more datasets
 - End-task aware training
