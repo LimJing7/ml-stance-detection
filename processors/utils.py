@@ -321,7 +321,7 @@ def convert_stance_examples_to_mlm_features(
       toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
     elif topic_len > text_len:
       toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-text_len]
-      toked_topic['attention_mask'] = toked_topic['afttention_mask'][:working_len-text_len]
+      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-text_len]
     else:
       raise ValueError('This should not be reachable')
 
