@@ -75,6 +75,17 @@ We can add a weighting term to the loss function for each dataset to change the 
 - Uncorrected Scaled
   - Compute dataset weights in the same way as in "scaled" but without step 3.
 
+#### Robust Training
+We adapted the methods from [Improving Zero-Shot Cross-Lingual Transfer Learning via Robust Training](https://aclanthology.org/2021.emnlp-main.126.pdf)\(Huang et. al.\) to improve the robustness of the trained embeddings.
+
+We tried two variations of the Randomized Smoothing method, Random Perturbation (RS-RP) and Data Augmentation (RS-DA).
+In RS-RP, we sample a noise vector and add it to the embeddings before performing classification. Whereas in RS-DA, we used a synonym set to replace the words in the train set with their synonyms and use these as the augmented training examples. We modified the code from their [github](https://github.com/uclanlp/Robust-XLT) and also took the synonyms set from there.
+
+#### TARTAN
+We adapted the meta-tartan method from [SHOULD WE BE Pre-TRAINING? EXPLORING END-TASK AWARE TRAINING IN LIEU OF CONTINUED PRE-TRAINING](https://openreview.net/pdf?id=2bO2x8NAIMB) \(Dery et. al.\). Instead of using the meta-training to learn weights to modulate between task losses, we use it to modulate between the datasets that we are using. Due to the amount of VRAM required, we were unable to train the MT-TARTAN model on all 11 English datasets. Hence, we decided to just train on 5 datasets. For the first experiment, we picked the 5 datasets that we felt will be the most useful. For the next 2 experiments, we ran some simple one dataset experiments to pick the top two most useful datasets. We then ran further experiments by adding one dataset at a time to the training. This allowed us to put 3 more datasets and train them with the two previously selected ones.
+
+We then contrasted the same models trained without TARTAN to see what advantage does TARTAN bring for us.
+
 ### Hyperparameters
 We have included the hyperparameters we used for the below experiments here:
 <table>
@@ -105,8 +116,8 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 ### Different Labels
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
 |-------------|:----:|:--------:|:---------------:|:-----------------------:|
-| nlpcc       | 0.43 |   0.42   |       0.43      |           0.42          |
-| trans_nlpcc | 0.39 |   0.40   |       0.39      |           0.42          |
+| nlpcc       | 0.43 |   0.42   |       0.49      |           0.42          |
+| trans_nlpcc | 0.39 |   0.40   |       0.42      |           0.42          |
 
 ### Same Labels
 |             | base | with mlm | with 2 negative | with mlm and 2 negative |
@@ -126,15 +137,21 @@ For comparison, the macro-F1 in Hardalov et al. is 0.458.
 Using 2 negative
 |             |   Equal  | Scaled | Inverse Scaled | Uncorrected Scaled | Scaled with smaller LR | Random |
 |-------------|:--------:|:------:|:--------------:|:------------------:|:----------------------:|:------:|
-| nlpcc       | **0.49** |  0.47  |      0.47      |        0.47        |          0.35          |  0.46  |
-| trans_nlpcc |   0.40   |  0.39  |    **0.44**    |        0.43        |          0.32          |  0.43  |
+| nlpcc       |   0.49   |  0.47  |      0.47      |        0.47        |          0.35          |  0.46  |
+| trans_nlpcc |   0.40   |  0.39  |      0.44      |        0.43        |          0.32          |  0.43  |
 
 
 ### Compare different robust training schemes
 |             | RS-RP (0.01) | RS-RP (0.1) | RS-DA |   |
 |-------------|:------------:|:-----------:|:-----:|:-:|
-| nlpcc       |     0.50     |     0.48    |  0.48 |   |
+| nlpcc       |   **0.50**   |     0.48    |  0.48 |   |
 | trans_nlpcc |     0.43     |     0.41    |  0.43 |   |
+
+### Tartan
+|                | arc argmin fnc1 twitter2015 twitter2017 <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs |
+|----------------|:-------------------------------------------------:|:----------------------------------------------------------:|:-----------------------------------------------------------:|
+| with tartan    |                        0.48                       |                            0.46                            |                             0.48                            |
+| without tartan |                        0.47                       |                            0.43                            |                             0.46                            |
 ## Future Work
 - Add more datasets
 - End-task aware training
