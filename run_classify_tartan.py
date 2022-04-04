@@ -61,7 +61,6 @@ from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
 from processors.nlpcc import NLPCCProcessor
 from processors.perspectrum import PerspectrumProcessor
-from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
 from processors.snopes import SnopesProcessor
 from processors.trans_nlpcc import TransNLPCCProcessor
@@ -96,7 +95,6 @@ PROCESSORS = {
              'ibmcs': IBMCSProcessor,
              'nlpcc': NLPCCProcessor,
              'perspectrum': PerspectrumProcessor,
-             'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
              'snopes': SnopesProcessor,
              'trans_nlpcc': TransNLPCCProcessor,
@@ -290,7 +288,7 @@ def get_meta_grads(args, model, compute_loss, meta_dataloader):
       else:
         inputs["langs"] = batch[6]
 
-    tqdm.write(f'meta torch memory use: {torch.cuda.memory_allocated() / 1024 / 1024 / 1024}GB')
+    # tqdm.write(f'meta torch memory use: {torch.cuda.memory_allocated() / 1024 / 1024 / 1024}GB')
     outputs = model(**inputs, output_hidden_states=True)
     loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
     if args.mlm:
@@ -416,7 +414,7 @@ def train(args, train_datasets, meta_dataset, model, tokenizer, tartan_trainer=N
   tr_loss, logging_loss = 0.0, 0.0
   model.zero_grad()
   train_iterator = trange(
-    epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
+    epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0], dynamic_ncols=True
   )
   set_seed(args)  # Added here for reproductibility
 
@@ -426,7 +424,7 @@ def train(args, train_datasets, meta_dataset, model, tokenizer, tartan_trainer=N
   longest_train_dataloader = train_dataloaders[longest_dl_idx]
 
   for _ in train_iterator:
-    epoch_iterator = tqdm(longest_train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+    epoch_iterator = tqdm(longest_train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
     step = 0
     for longest_only_step, longest_batch in enumerate(epoch_iterator):
       # Skip past any already trained steps if resuming training
@@ -448,7 +446,7 @@ def train(args, train_datasets, meta_dataset, model, tokenizer, tartan_trainer=N
             train_iterator = iter(train_dataloaders[dl_idx])
             batch = next(train_iterator)
             train_iterators[dl_idx] = train_iterator
-          tqdm.write(f'torch memory use: {torch.cuda.memory_allocated() / 1024 / 1024 / 1024}GB')
+          # tqdm.write(f'torch memory use: {torch.cuda.memory_allocated() / 1024 / 1024 / 1024}GB')
           loss, mlm_loss, grad, mlm_grad = train_step(args, model, compute_loss, optimizer, batch)
           losses.append(loss)
           mlm_losses.append(mlm_loss)
@@ -713,7 +711,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
     preds = None
     out_label_ids = None
     sentences = None
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
       model.eval()
       batch = tuple(t.to(args.device) for t in batch)
 
