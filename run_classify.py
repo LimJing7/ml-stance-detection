@@ -362,11 +362,11 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   tr_loss, logging_loss = 0.0, 0.0
   model.zero_grad()
   train_iterator = trange(
-    epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
+    epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0], dynamic_ncols=True
   )
   set_seed(args)  # Added here for reproductibility
   for _ in train_iterator:
-    epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+    epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
     for step, batch in enumerate(epoch_iterator):
       # Skip past any already trained steps if resuming training
       if steps_trained_in_current_epoch > 0:
@@ -591,7 +591,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
     preds = None
     out_label_ids = None
     sentences = None
-    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
       model.eval()
       batch = tuple(t.to(args.device) for t in batch)
 
