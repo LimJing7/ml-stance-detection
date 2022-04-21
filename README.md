@@ -148,11 +148,10 @@ Using 2 negative
 | trans_nlpcc |     0.43     |     0.41    |  0.43 |   |
 
 ### Tartan
-|                | arc argmin fnc1 twitter2015 twitter2017 <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs |
-|----------------|:-------------------------------------------------:|:----------------------------------------------------------:|:-----------------------------------------------------------:|
-| with tartan    |                        0.48                       |                            0.46                            |                             0.48                            |
-| without tartan |                        0.47                       |                            0.43                            |                             0.46                            |
-## Future Work
+|                | arc argmin fnc1 twitter2015 twitter2017 <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs + rs_rp | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs + rs_rp |
+|----------------|:------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|:-----------------------------------------------------------------------:|:------------------------------------------------------------------------:|
+| with tartan    |                          0.48                          |                               0.46                              |                               0.48                               |                                   0.46                                  |                                   0.47                                   |
+| without tartan |                          0.47                          |                               0.43                              |                               0.46                               |                                   0.46                                  |                                   0.49                                   |
 - Add more datasets
 - End-task aware training
 - Meta end-task aware training
