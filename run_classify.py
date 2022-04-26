@@ -49,11 +49,14 @@ from transformers import (
 )
 import transformers
 from processors.amazonzh import AmazonZhProcessor
+from processors.pawsen import PAWSXEnProcessor
+from processors.pawszh import PAWSXZhProcessor
 from processors.twitter2015 import Twitter2015Processor
 
 from processors.utils import (
   convert_classification_examples_to_mlm_features,
   convert_nli_examples_to_mlm_features,
+  convert_pawx_examples_to_mlm_features,
   convert_stance_examples_to_mlm_features,
 )
 from processors.ans import ANSProcessor
@@ -105,13 +108,16 @@ PROCESSORS = {
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor},
   'nli': {'indonli': IndonliProcessor},
-  'classification': {'amazonzh': AmazonZhProcessor}
+  'classification': {'amazonzh': AmazonZhProcessor},
+  'pawsx': {'pawsxzh': PAWSXZhProcessor,
+            'pawsxen': PAWSXEnProcessor}
 }
 
 feature_converters = {
   'stance': convert_stance_examples_to_mlm_features,
   'nli': convert_nli_examples_to_mlm_features,
-  'classification': convert_classification_examples_to_mlm_features
+  'classification': convert_classification_examples_to_mlm_features,
+  'pawsx': convert_pawx_examples_to_mlm_features
 }
 
 
