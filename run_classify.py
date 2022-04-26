@@ -48,9 +48,12 @@ from transformers import (
   get_linear_schedule_with_warmup,
 )
 import transformers
+from processors.amazonzh import AmazonZhProcessor
 from processors.twitter2015 import Twitter2015Processor
 
 from processors.utils import (
+  convert_classification_examples_to_mlm_features,
+  convert_nli_examples_to_mlm_features,
   convert_stance_examples_to_mlm_features,
 )
 from processors.ans import ANSProcessor
@@ -61,13 +64,14 @@ from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
 from processors.nlpcc import NLPCCProcessor
 from processors.perspectrum import PerspectrumProcessor
-from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
 from processors.snopes import SnopesProcessor
 from processors.trans_nlpcc import TransNLPCCProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
+
+from processors.indonli import IndonliProcessor
 
 from perturb import perturb
 
@@ -94,13 +98,20 @@ PROCESSORS = {
              'ibmcs': IBMCSProcessor,
              'nlpcc': NLPCCProcessor,
              'perspectrum': PerspectrumProcessor,
-             'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
              'snopes': SnopesProcessor,
              'trans_nlpcc': TransNLPCCProcessor,
              'twitter2015': Twitter2015Processor,
              'twitter2017': Twitter2017Processor,
-             'vast': VASTProcessor}
+             'vast': VASTProcessor},
+  'nli': {'indonli': IndonliProcessor},
+  'classification': {'amazonzh': AmazonZhProcessor}
+}
+
+feature_converters = {
+  'stance': convert_stance_examples_to_mlm_features,
+  'nli': convert_nli_examples_to_mlm_features,
+  'classification': convert_classification_examples_to_mlm_features
 }
 
 
@@ -719,7 +730,8 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     if da == f'_w_da_{args.robust_samples}':
       examples = perturb(examples, args.robust_samples, args.robust_neighbors)
 
-    features = convert_stance_examples_to_mlm_features(
+    feature_converter = feature_converters[task]
+    features = feature_converter(
       examples,
       tokenizer,
       label_list=label_list,
