@@ -49,6 +49,7 @@ from transformers import (
 )
 import transformers
 from processors.amazonzh import AmazonZhProcessor
+from processors.idclickbait import IdClickbaitProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
 from processors.twitter2015 import Twitter2015Processor
@@ -108,9 +109,11 @@ PROCESSORS = {
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor},
   'nli': {'indonli': IndonliProcessor},
-  'classification': {'amazonzh': AmazonZhProcessor},
-  'pawsx': {'pawsxzh': PAWSXZhProcessor,
-            'pawsxen': PAWSXEnProcessor}
+  'classification': {'amazonzh': AmazonZhProcessor,
+                     'idclickbait': IdClickbaitProcessor},
+  'pawsx': {'pawsxen': PAWSXEnProcessor,
+            'pawsxzh': PAWSXZhProcessor}
+
 }
 
 feature_converters = {
