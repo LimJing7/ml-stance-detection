@@ -26,6 +26,7 @@ import random
 import statistics
 
 import numpy as np
+import sklearn
 from sklearn.metrics import f1_score
 import torch
 from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
@@ -54,12 +55,8 @@ from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
 from processors.twitter2015 import Twitter2015Processor
 
-from processors.utils import (
-  convert_classification_examples_to_mlm_features,
-  convert_nli_examples_to_mlm_features,
-  convert_pawx_examples_to_mlm_features,
-  convert_stance_examples_to_mlm_features,
-)
+from processors.utils import convert_examples_to_mlm_features
+
 from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
@@ -114,13 +111,6 @@ PROCESSORS = {
   'pawsx': {'pawsxen': PAWSXEnProcessor,
             'pawsxzh': PAWSXZhProcessor}
 
-}
-
-feature_converters = {
-  'stance': convert_stance_examples_to_mlm_features,
-  'nli': convert_nli_examples_to_mlm_features,
-  'classification': convert_classification_examples_to_mlm_features,
-  'pawsx': convert_pawx_examples_to_mlm_features
 }
 
 
@@ -577,18 +567,22 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
   results = {}
   for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
+    labels_list = []
     if type(dataset) == list:
       eval_datasets = []
       shift = 0
       for ds in dataset:
         eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True, shift=shift)
         processor = PROCESSORS[args.task_name][ds]()
+        labels_list.extend(processor.get_labels())
         n_labels = len(processor.get_labels())
         shift += n_labels
         eval_datasets.append(eval_dataset)
       eval_dataset = ConcatDataset(eval_datasets)
     else:
       eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, lang2id=lang2id, evaluate=True)
+      processor = PROCESSORS[args.task_name][dataset]()
+      labels_list.extend(processor.get_labels())
 
     if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
       os.makedirs(eval_output_dir)
@@ -655,6 +649,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
     if output_file:
       logger.info("***** Save prediction ******")
+      print(f'output file: {output_file}')
       with open(output_file, 'w') as fout:
         pad_token_id = tokenizer.pad_token_id
         sentences = sentences.astype(int).tolist()
@@ -662,13 +657,19 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         sentences = [tokenizer.convert_ids_to_tokens(s) for s in sentences]
         #fout.write('Prediction\tLabel\tSentences\n')
         for p, l, s in zip(list(preds), list(out_label_ids), sentences):
-          p = tokenizer.convert_ids_to_tokens(int(p))
-          l = tokenizer.convert_ids_to_tokens(int(l))
+          p = labels_list[int(p)]
+          l = labels_list[int(l)]
           s = ' '.join(s)
           if output_only_prediction:
             fout.write(str(p) + '\n')
           else:
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
+
+      cm = sklearn.metrics.confusion_matrix(out_label_ids, preds, list(range(len(labels_list))))
+      with open(os.path.splitext(output_file)[0]+'_cm.txt', 'w') as f:
+        f.write(' \t' + '\t'.join([f'pred_{i}' for i in labels_list]) + '\n')
+        for i, label in enumerate(labels_list):
+          f.write(f'true_{label}\t' + '\t'.join([str(v) for v in cm[i]]) + '\n')
     logger.info("***** Eval results {} {} *****".format(prefix, dataset))
     for key in sorted(result.keys()):
       logger.info("  %s = %s", key, str(result[key]))
@@ -693,7 +694,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     da = ''
   else:
     if args.mlm:
-      mlm = 'w_mlm'
+      mlm = f'w_{args.mlm_probability}mlm'
     else:
       mlm = 'no_mlm'
     if args.robust == 'rs_da':
@@ -739,10 +740,10 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     if da == f'_w_da_{args.robust_samples}':
       examples = perturb(examples, args.robust_samples, args.robust_neighbors)
 
-    feature_converter = feature_converters[task]
-    features = feature_converter(
+    features = convert_examples_to_mlm_features(
       examples,
       tokenizer,
+      task,
       label_list=label_list,
       max_length=args.max_seq_length,
       output_mode=output_mode,
@@ -886,7 +887,7 @@ def main():
     "--eval_during_train_use_pred_dataset", action="store_true", help="Use pred dataset for eval during training"
   )
   parser.add_argument('--mlm', action='store_true', help="use mlm in loss")
-  parser.add_argument('--mlm_probability', default=0.105)
+  parser.add_argument('--mlm_probability', default=0.105, type=float)
   parser.add_argument('--alpha', default=0.5, type=float, help="Balance between label loss and mlm")
   parser.add_argument('--negative_samples', default=0, type=int, help="Number of negative samples to draw")
   parser.add_argument('--ds_weights', default='equal', choices=['equal', 'inverse_scaled', 'uncorrected_scaled', 'random', 'scaled'], help='how to weight the different datasets')
@@ -1200,7 +1201,7 @@ def main():
 
   if args.do_predict_dev:
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path if args.model_name_or_path else best_checkpoint, do_lower_case=args.do_lower_case)
-    model = model_class.from_pretrained(args.init_checkpoint)
+    model = model_class.from_pretrained(best_checkpoint)
     model.to(args.device)
     output_predict_file = os.path.join(args.output_dir, 'dev_results')
     total = total_correct = 0.0

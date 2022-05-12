@@ -252,9 +252,10 @@ def mask_tokens(inputs, tokenizer, mlm_probability):
     return inputs, labels
 
 
-def convert_stance_examples_to_mlm_features(
+def convert_examples_to_mlm_features(
   examples,
   tokenizer,
+  task,
   max_length=512,
   label_list=None,
   output_mode=None,
@@ -290,6 +291,32 @@ def convert_stance_examples_to_mlm_features(
   # if is_tf_available() and isinstance(examples, tf.data.Dataset):
   #   is_tf_dataset = True
 
+  if task == 'stance':
+    pattern = f'The stance of the following is {tokenizer.mask_token} the '
+    pattern_length = 11
+    text_index = 7
+    topic_index = 10
+    one_sided = False
+  elif task == 'nli':
+    pattern = f'This premise: {tokenizer.mask_token} this hypothesis: '
+    pattern_length = 11
+    text_index = 5
+    topic_index = 6
+    one_sided = False
+  elif task == 'classification':
+    pattern = f'This comment is {tokenizer.mask_token}'
+    pattern_length = 6
+    text_index = 3
+    one_sided = True
+  elif task == 'pawx':
+    pattern = f'Sentence 1 and sentence 2 {tokenizer.mask_token} paraphases of each other.'
+    pattern_length = 16
+    text_index = 4
+    topic_index = 7
+    one_sided = False
+  else:
+    raise NotImplementedError('This task is not supported')
+
   label_map = {label: i for i, label in enumerate(label_list)}
 
   features = []
@@ -301,522 +328,62 @@ def convert_stance_examples_to_mlm_features(
     #   example = processor.tfds_map(example)
 
     # truncate
-    working_len = max_length - 11  # 11 = pattern length
+    working_len = max_length - pattern_length
     if not isinstance(tokenizer, XLMRobertaTokenizer):
       raise NotImplementedError('This tokenizer is not supported')
     toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
     text_len = len(toked_text['input_ids'])
     toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=False)
     topic_len = len(toked_topic['input_ids'])
-    inputs = tokenizer.encode_plus(f'The stance of the following is {tokenizer.mask_token} the ', add_special_tokens=True, max_length=max_length)
-    if  text_len + topic_len <= working_len:
-      pass
-    elif text_len > working_len/2 and topic_len > working_len/2:
-      toked_text['input_ids'] = toked_text['input_ids'][:int(working_len/2)]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:int(working_len/2)]
-      toked_topic['input_ids'] = toked_topic['input_ids'][:int(working_len/2)]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:int(working_len/2)]
-    elif text_len > topic_len:
-      toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
-    elif topic_len > text_len:
-      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-text_len]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-text_len]
+    inputs = tokenizer.encode_plus(pattern, add_special_tokens=True, max_length=max_length)
+    if one_sided:
+      if  text_len <= working_len:
+        pass
+      elif text_len > working_len:
+        toked_text['input_ids'] = toked_text['input_ids'][:working_len]
+        toked_text['attention_mask'] = toked_text['attention_mask'][:working_len]
+      else:
+        raise ValueError('This should not be reachable')
     else:
-      raise ValueError('This should not be reachable')
+      if  text_len + topic_len <= working_len:
+        pass
+      elif text_len > working_len/2 and topic_len > working_len/2:
+        toked_text['input_ids'] = toked_text['input_ids'][:int(working_len/2)]
+        toked_text['attention_mask'] = toked_text['attention_mask'][:int(working_len/2)]
+        toked_topic['input_ids'] = toked_topic['input_ids'][:int(working_len/2)]
+        toked_topic['attention_mask'] = toked_topic['attention_mask'][:int(working_len/2)]
+      elif text_len > topic_len:
+        toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
+        toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
+      elif topic_len > text_len:
+        toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-text_len]
+        toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-text_len]
+      else:
+        raise ValueError('This should not be reachable')
 
-    if mlm:
-      mlm_labels = [-100] * len(inputs['input_ids'])
-      toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
-      toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
-
-      inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
-      inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
-      mlm_labels = mlm_labels[:7] + text_label + mlm_labels[7:10] + topic_label + mlm_labels[10:]
-    else:
-      inputs['input_ids'] = inputs['input_ids'][:7] + toked_text['input_ids'] + inputs['input_ids'][7:10] + toked_topic['input_ids'] + inputs['input_ids'][10:]
-      inputs['attention_mask'] = inputs['attention_mask'][:7] + toked_text['attention_mask'] + inputs['attention_mask'][7:10] + toked_topic['attention_mask'] + inputs['attention_mask'][10:]
-
-    input_ids = inputs["input_ids"]
-    try:
-      input_ids.index(tokenizer.mask_token_id)
-    except ValueError:
-      input_ids[-1] = tokenizer.mask_token_id
-      input_ids[-2] = tokenizer.sep_token_id
-
-    try:
-      token_type_ids = inputs["token_type_ids"]
-    except KeyError:
-      token_type_ids = [pad_token_segment_id] * len(input_ids)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-    # Zero-pad up to the sequence length.
-    padding_length = max_length - len(input_ids)
-    if pad_on_left:
-      input_ids = ([pad_token] * padding_length) + input_ids
-      attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
-      token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+    if one_sided:
       if mlm:
-        mlm_labels = ([-100] * padding_length) + mlm_labels
+        mlm_labels = [-100] * len(inputs['input_ids'])
+        toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
+
+        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:]
+        mlm_labels = mlm_labels[:text_index] + text_label + mlm_labels[text_index:]
+      else:
+        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:]
     else:
-      input_ids = input_ids + ([pad_token] * padding_length)
-      attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-      token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
       if mlm:
-        mlm_labels = mlm_labels + ([-100] * padding_length)
+        mlm_labels = [-100] * len(inputs['input_ids'])
+        toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
+        toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
 
-    if lang2id is not None:
-      lid = lang2id.get(example.language, lang2id["en"])
-    else:
-      lid = 0
-    langs = [lid] * max_length
-
-    assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
-    assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
-      len(attention_mask), max_length
-    )
-    assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(token_type_ids), max_length
-    )
-    if mlm:
-      assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
-        len(mlm_labels), max_length
-      )
-
-    label = [-100] * len(input_ids)
-    label[input_ids.index(tokenizer.mask_token_id)] = label_map[example.label]
-
-    if ex_index < 5:
-      logger.info("*** Example ***")
-      logger.info("guid: %s" % (example.guid))
-      logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
-      logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
-      logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-      logger.info("label: %s" % " ".join([str(x) for x in label]))
-      logger.info("language: %s, (lid = %d)" % (example.language, lid))
-      if mlm:
-        logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
-
-    if mlm:
-      features.append(
-        StanceFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels
-        )
-      )
-    else:
-      features.append(
-        InputFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
-        )
-      )
-  return features
-
-
-def convert_nli_examples_to_mlm_features(
-  examples,
-  tokenizer,
-  max_length=512,
-  label_list=None,
-  output_mode=None,
-  pad_on_left=False,
-  pad_token=0,
-  pad_token_segment_id=0,
-  mask_padding_with_zero=True,
-  lang2id=None,
-  mlm=False,
-  mlm_probability=0,
-):
-  """
-  Loads a data file into a list of ``InputFeatures``
-  Args:
-    examples: List of ``StanceExamples`` or ``tf.data.Dataset`` containing the examples.
-    tokenizer: Instance of a tokenizer that will tokenize the examples
-    max_length: Maximum example length
-    task: GLUE task
-    label_list: List of labels. Can be obtained from the processor using the ``processor.get_labels()`` method
-    output_mode: String indicating the output mode. Either ``regression`` or ``classification``
-    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
-    pad_token: Padding token
-    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
-    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
-      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
-      actual values)
-  Returns:
-    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
-    containing the task-specific features. If the input is a list of ``InputExamples``, will return
-    a list of task-specific ``InputFeatures`` which can be fed to the model.
-  """
-  # is_tf_dataset = False
-  # if is_tf_available() and isinstance(examples, tf.data.Dataset):
-  #   is_tf_dataset = True
-
-  label_map = {label: i for i, label in enumerate(label_list)}
-
-  features = []
-  for (ex_index, example) in enumerate(examples):
-    if ex_index % 10000 == 0:
-      logger.info("Writing example %d" % (ex_index))
-    # if is_tf_dataset:
-    #   example = processor.get_example_from_tensor_dict(example)
-    #   example = processor.tfds_map(example)
-
-    # truncate
-    working_len = max_length - 11  # 11 = pattern length
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
-      raise NotImplementedError('This tokenizer is not supported')
-    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
-    text_len = len(toked_text['input_ids'])
-    toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=False)
-    topic_len = len(toked_topic['input_ids'])
-    inputs = tokenizer.encode_plus(f'This premise: {tokenizer.mask_token} this hypothesis: ', add_special_tokens=True, max_length=max_length)
-    if  text_len + topic_len <= working_len:
-      pass
-    elif text_len > working_len/2 and topic_len > working_len/2:
-      toked_text['input_ids'] = toked_text['input_ids'][:int(working_len/2)]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:int(working_len/2)]
-      toked_topic['input_ids'] = toked_topic['input_ids'][:int(working_len/2)]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:int(working_len/2)]
-    elif text_len > topic_len:
-      toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
-    elif topic_len > text_len:
-      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-text_len]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-text_len]
-    else:
-      raise ValueError('This should not be reachable')
-
-    if mlm:
-      mlm_labels = [-100] * len(inputs['input_ids'])
-      toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
-      toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
-
-      inputs['input_ids'] = inputs['input_ids'][:5] + toked_text['input_ids'] + inputs['input_ids'][5:6] + toked_topic['input_ids'] + inputs['input_ids'][6:]
-      inputs['attention_mask'] = inputs['attention_mask'][:5] + toked_text['attention_mask'] + inputs['attention_mask'][5:6] + toked_topic['attention_mask'] + inputs['attention_mask'][6:]
-      mlm_labels = mlm_labels[:5] + text_label + mlm_labels[5:6] + topic_label + mlm_labels[6:]
-    else:
-      inputs['input_ids'] = inputs['input_ids'][:5] + toked_text['input_ids'] + inputs['input_ids'][5:6] + toked_topic['input_ids'] + inputs['input_ids'][6:]
-      inputs['attention_mask'] = inputs['attention_mask'][:5] + toked_text['attention_mask'] + inputs['attention_mask'][5:6] + toked_topic['attention_mask'] + inputs['attention_mask'][6:]
-
-    input_ids = inputs["input_ids"]
-    try:
-      input_ids.index(tokenizer.mask_token_id)
-    except ValueError:
-      input_ids[-1] = tokenizer.mask_token_id
-      input_ids[-2] = tokenizer.sep_token_id
-
-    try:
-      token_type_ids = inputs["token_type_ids"]
-    except KeyError:
-      token_type_ids = [pad_token_segment_id] * len(input_ids)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-    # Zero-pad up to the sequence length.
-    padding_length = max_length - len(input_ids)
-    if pad_on_left:
-      input_ids = ([pad_token] * padding_length) + input_ids
-      attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
-      token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
-      if mlm:
-        mlm_labels = ([-100] * padding_length) + mlm_labels
-    else:
-      input_ids = input_ids + ([pad_token] * padding_length)
-      attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-      token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
-      if mlm:
-        mlm_labels = mlm_labels + ([-100] * padding_length)
-
-    if lang2id is not None:
-      lid = lang2id.get(example.language, lang2id["en"])
-    else:
-      lid = 0
-    langs = [lid] * max_length
-
-    assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
-    assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
-      len(attention_mask), max_length
-    )
-    assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(token_type_ids), max_length
-    )
-    if mlm:
-      assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
-        len(mlm_labels), max_length
-      )
-
-    label = [-100] * len(input_ids)
-    label[input_ids.index(tokenizer.mask_token_id)] = label_map[example.label]
-
-    if ex_index < 5:
-      logger.info("*** Example ***")
-      logger.info("guid: %s" % (example.guid))
-      logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
-      logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
-      logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-      logger.info("label: %s" % " ".join([str(x) for x in label]))
-      logger.info("language: %s, (lid = %d)" % (example.language, lid))
-      if mlm:
-        logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
-
-    if mlm:
-      features.append(
-        StanceFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels
-        )
-      )
-    else:
-      features.append(
-        InputFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
-        )
-      )
-  return features
-
-
-def convert_classification_examples_to_mlm_features(
-  examples,
-  tokenizer,
-  max_length=512,
-  label_list=None,
-  output_mode=None,
-  pad_on_left=False,
-  pad_token=0,
-  pad_token_segment_id=0,
-  mask_padding_with_zero=True,
-  lang2id=None,
-  mlm=False,
-  mlm_probability=0,
-):
-  """
-  Loads a data file into a list of ``InputFeatures``
-  Args:
-    examples: List of ``StanceExamples`` or ``tf.data.Dataset`` containing the examples.
-    tokenizer: Instance of a tokenizer that will tokenize the examples
-    max_length: Maximum example length
-    task: GLUE task
-    label_list: List of labels. Can be obtained from the processor using the ``processor.get_labels()`` method
-    output_mode: String indicating the output mode. Either ``regression`` or ``classification``
-    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
-    pad_token: Padding token
-    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
-    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
-      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
-      actual values)
-  Returns:
-    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
-    containing the task-specific features. If the input is a list of ``InputExamples``, will return
-    a list of task-specific ``InputFeatures`` which can be fed to the model.
-  """
-  # is_tf_dataset = False
-  # if is_tf_available() and isinstance(examples, tf.data.Dataset):
-  #   is_tf_dataset = True
-
-  label_map = {label: i for i, label in enumerate(label_list)}
-
-  features = []
-  for (ex_index, example) in enumerate(examples):
-    if ex_index % 10000 == 0:
-      logger.info("Writing example %d" % (ex_index))
-    # if is_tf_dataset:
-    #   example = processor.get_example_from_tensor_dict(example)
-    #   example = processor.tfds_map(example)
-
-    # truncate
-    working_len = max_length - 6  # 6 = pattern length
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
-      raise NotImplementedError('This tokenizer is not supported')
-    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
-    text_len = len(toked_text['input_ids'])
-    inputs = tokenizer.encode_plus(f'This comment is {tokenizer.mask_token}', add_special_tokens=True, max_length=max_length)
-    if  text_len <= working_len:
-      pass
-    elif text_len > working_len:
-      toked_text['input_ids'] = toked_text['input_ids'][:working_len]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len]
-    else:
-      raise ValueError('This should not be reachable')
-
-    if mlm:
-      mlm_labels = [-100] * len(inputs['input_ids'])
-      toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
-
-      inputs['input_ids'] = inputs['input_ids'][:3] + toked_text['input_ids'] + inputs['input_ids'][3:]
-      inputs['attention_mask'] = inputs['attention_mask'][:3] + toked_text['attention_mask'] + inputs['attention_mask'][3:]
-      mlm_labels = mlm_labels[:3] + text_label + mlm_labels[3:]
-    else:
-      inputs['input_ids'] = inputs['input_ids'][:3] + toked_text['input_ids'] + inputs['input_ids'][3:]
-      inputs['attention_mask'] = inputs['attention_mask'][:3] + toked_text['attention_mask'] + inputs['attention_mask'][3:]
-
-    input_ids = inputs["input_ids"]
-    try:
-      input_ids.index(tokenizer.mask_token_id)
-    except ValueError:
-      input_ids[-1] = tokenizer.mask_token_id
-      input_ids[-2] = tokenizer.sep_token_id
-
-    try:
-      token_type_ids = inputs["token_type_ids"]
-    except KeyError:
-      token_type_ids = [pad_token_segment_id] * len(input_ids)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-    # Zero-pad up to the sequence length.
-    padding_length = max_length - len(input_ids)
-    if pad_on_left:
-      input_ids = ([pad_token] * padding_length) + input_ids
-      attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
-      token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
-      if mlm:
-        mlm_labels = ([-100] * padding_length) + mlm_labels
-    else:
-      input_ids = input_ids + ([pad_token] * padding_length)
-      attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-      token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
-      if mlm:
-        mlm_labels = mlm_labels + ([-100] * padding_length)
-
-    if lang2id is not None:
-      lid = lang2id.get(example.language, lang2id["en"])
-    else:
-      lid = 0
-    langs = [lid] * max_length
-
-    assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
-    assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
-      len(attention_mask), max_length
-    )
-    assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(token_type_ids), max_length
-    )
-    if mlm:
-      assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
-        len(mlm_labels), max_length
-      )
-
-    label = [-100] * len(input_ids)
-    label[input_ids.index(tokenizer.mask_token_id)] = label_map[example.label]
-
-    if ex_index < 5:
-      logger.info("*** Example ***")
-      logger.info("guid: %s" % (example.guid))
-      logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
-      logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
-      logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-      logger.info("label: %s" % " ".join([str(x) for x in label]))
-      logger.info("language: %s, (lid = %d)" % (example.language, lid))
-      if mlm:
-        logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
-
-    if mlm:
-      features.append(
-        StanceFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels
-        )
-      )
-    else:
-      features.append(
-        InputFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
-        )
-      )
-  return features
-
-
-def convert_pawx_examples_to_mlm_features(
-  examples,
-  tokenizer,
-  max_length=512,
-  label_list=None,
-  output_mode=None,
-  pad_on_left=False,
-  pad_token=0,
-  pad_token_segment_id=0,
-  mask_padding_with_zero=True,
-  lang2id=None,
-  mlm=False,
-  mlm_probability=0,
-):
-  """
-  Loads a data file into a list of ``InputFeatures``
-  Args:
-    examples: List of ``StanceExamples`` or ``tf.data.Dataset`` containing the examples.
-    tokenizer: Instance of a tokenizer that will tokenize the examples
-    max_length: Maximum example length
-    task: GLUE task
-    label_list: List of labels. Can be obtained from the processor using the ``processor.get_labels()`` method
-    output_mode: String indicating the output mode. Either ``regression`` or ``classification``
-    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
-    pad_token: Padding token
-    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
-    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
-      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
-      actual values)
-  Returns:
-    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
-    containing the task-specific features. If the input is a list of ``InputExamples``, will return
-    a list of task-specific ``InputFeatures`` which can be fed to the model.
-  """
-  # is_tf_dataset = False
-  # if is_tf_available() and isinstance(examples, tf.data.Dataset):
-  #   is_tf_dataset = True
-
-  label_map = {label: i for i, label in enumerate(label_list)}
-
-  features = []
-  for (ex_index, example) in enumerate(examples):
-    if ex_index % 10000 == 0:
-      logger.info("Writing example %d" % (ex_index))
-    # if is_tf_dataset:
-    #   example = processor.get_example_from_tensor_dict(example)
-    #   example = processor.tfds_map(example)
-
-    # truncate
-    working_len = max_length - 16  # 16 = pattern length
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
-      raise NotImplementedError('This tokenizer is not supported')
-    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
-    text_len = len(toked_text['input_ids'])
-    toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=False)
-    topic_len = len(toked_topic['input_ids'])
-    inputs = tokenizer.encode_plus(f'Sentence 1 and sentence 2 {tokenizer.mask_token} paraphases of each other.', add_special_tokens=True, max_length=max_length)
-    if  text_len + topic_len <= working_len:
-      pass
-    elif text_len > working_len/2 and topic_len > working_len/2:
-      toked_text['input_ids'] = toked_text['input_ids'][:int(working_len/2)]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:int(working_len/2)]
-      toked_topic['input_ids'] = toked_topic['input_ids'][:int(working_len/2)]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:int(working_len/2)]
-    elif text_len > topic_len:
-      toked_text['input_ids'] = toked_text['input_ids'][:working_len-topic_len]
-      toked_text['attention_mask'] = toked_text['attention_mask'][:working_len-topic_len]
-    elif topic_len > text_len:
-      toked_topic['input_ids'] = toked_topic['input_ids'][:working_len-text_len]
-      toked_topic['attention_mask'] = toked_topic['attention_mask'][:working_len-text_len]
-    else:
-      raise ValueError('This should not be reachable')
-
-    if mlm:
-      mlm_labels = [-100] * len(inputs['input_ids'])
-      toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
-      toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
-
-      inputs['input_ids'] = inputs['input_ids'][:4] + toked_text['input_ids'] + inputs['input_ids'][4:7] + toked_topic['input_ids'] + inputs['input_ids'][7:]
-      inputs['attention_mask'] = inputs['attention_mask'][:4] + toked_text['attention_mask'] + inputs['attention_mask'][4:7] + toked_topic['attention_mask'] + inputs['attention_mask'][7:]
-      mlm_labels = mlm_labels[:4] + text_label + mlm_labels[4:7] + topic_label + mlm_labels[7:]
-    else:
-      inputs['input_ids'] = inputs['input_ids'][:4] + toked_text['input_ids'] + inputs['input_ids'][4:7] + toked_topic['input_ids'] + inputs['input_ids'][7:]
-      inputs['attention_mask'] = inputs['attention_mask'][:4] + toked_text['attention_mask'] + inputs['attention_mask'][4:7] + toked_topic['attention_mask'] + inputs['attention_mask'][7:]
+        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:topic_index] + toked_topic['input_ids'] + inputs['input_ids'][topic_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:topic_index] + toked_topic['attention_mask'] + inputs['attention_mask'][topic_index:]
+        mlm_labels = mlm_labels[:text_index] + text_label + mlm_labels[text_index:topic_index] + topic_label + mlm_labels[topic_index:]
+      else:
+        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:topic_index] + toked_topic['input_ids'] + inputs['input_ids'][topic_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:topic_index] + toked_topic['attention_mask'] + inputs['attention_mask'][topic_index:]
 
     input_ids = inputs["input_ids"]
     try:
