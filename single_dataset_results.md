@@ -7,9 +7,9 @@
 
 # Macro-F1 score for non-stance
 
-| PAWSX-Zh | PAWSX-En | Id-Clickbait |
-|:--------:|:--------:|:------------:|
-|   0.85   |   0.93   |     0.79     |
+| PAWSX-Zh | PAWSX-En | Id-Clickbait | Amazon-Zh |
+|:--------:|:--------:|:------------:|:---------:|
+|   0.85   |   0.93   |     0.79     |    0.54   |
 
 
 # Hyperparameters
