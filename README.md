@@ -147,6 +147,12 @@ Using 2 negative
 | nlpcc       |   **0.50**   |     0.48    |  0.48 |   |
 | trans_nlpcc |     0.43     |     0.41    |  0.43 |   |
 
+### Different Masking Rate for MLM
+|             | 0.15 |  0.3 |  0.4 |
+|-------------|:----:|:----:|:----:|
+| nlpcc       | 0.43 | 0.45 | 0.46 |
+| trans_nlpcc | 0.41 | 0.36 | 0.37 |
+
 ### Tartan
 |                | arc argmin fnc1 twitter2015 twitter2017 <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs + rs_rp | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs + rs_rp |
 |----------------|:------------------------------------------------------:|:---------------------------------------------------------------:|:----------------------------------------------------------------:|:-----------------------------------------------------------------------:|:------------------------------------------------------------------------:|
