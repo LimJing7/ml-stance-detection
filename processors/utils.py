@@ -301,7 +301,7 @@ def convert_examples_to_mlm_features(
     pattern = f'This premise: {tokenizer.mask_token} this hypothesis: '
     pattern_length = 11
     text_index = 5
-    topic_index = 6
+    topic_index = 10
     one_sided = False
   elif task == 'classification':
     pattern = f'This comment is {tokenizer.mask_token}'
