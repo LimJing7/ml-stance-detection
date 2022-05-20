@@ -297,6 +297,11 @@ def convert_examples_to_mlm_features(
     text_index = 7
     topic_index = 10
     one_sided = False
+  elif task == 'no_topic_stance':
+    pattern = f'The stance of the following is {tokenizer.mask_token}'
+    pattern_length = 10
+    text_index = 7
+    one_sided = True
   elif task == 'nli':
     pattern = f'This premise: {tokenizer.mask_token} this hypothesis: '
     pattern_length = 11

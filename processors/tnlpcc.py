@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" NLPCC utils (dataset loading and evaluation) """
+""" tNLPCC utils (dataset loading and evaluation) """
 
 
 import logging
@@ -25,8 +25,8 @@ from .utils import StanceExample
 logger = logging.getLogger(__name__)
 
 
-class NLPCCProcessor(DataProcessor):
-    """Processor for the NLPCC dataset.
+class tNLPCCProcessor(DataProcessor):
+    """Processor for the tNLPCC dataset.
     Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
 
     label_map = {'AGAINST': 'against',
@@ -40,7 +40,7 @@ class NLPCCProcessor(DataProcessor):
     def get_examples(self, data_dir, split='train'):
       """See base class."""
       examples = []
-      lines = self._read_tsv(os.path.join(data_dir, "nlpcc-{}.tsv".format(split)), quotechar='"')
+      lines = self._read_tsv(os.path.join(data_dir, "tnlpcc-{}.tsv".format(split)), quotechar='"')
 
       for (i, line) in enumerate(lines):
         guid = "%s-%s" % (split, i)
@@ -49,7 +49,7 @@ class NLPCCProcessor(DataProcessor):
         if split == 'test' and len(line) != 4:
           label = "neutral"
         else:
-          label = NLPCCProcessor.label_map[str(line[3].strip())]
+          label = tNLPCCProcessor.label_map[str(line[3].strip())]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
         examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
       return examples
@@ -68,14 +68,14 @@ class NLPCCProcessor(DataProcessor):
         return ["against", "in favour", "neutral"]  # changing labels require overwriting cache
 
 
-nlpcc_processors = {
-    "stance": NLPCCProcessor,
+tnlpcc_processors = {
+    "stance": tNLPCCProcessor,
 }
 
-nlpcc_output_modes = {
+tnlpcc_output_modes = {
     "stance": "classification",
 }
 
-nlpcc_tasks_num_labels = {
-    "stance": 4,
+tnlpcc_tasks_num_labels = {
+    "stance": 3,
 }

@@ -71,6 +71,7 @@ from processors.trans_nlpcc import TransNLPCCProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
+from processors.tnlpcc import tNLPCCProcessor
 
 from processors.indonli import IndonliProcessor
 
@@ -104,7 +105,23 @@ PROCESSORS = {
              'trans_nlpcc': TransNLPCCProcessor,
              'twitter2015': Twitter2015Processor,
              'twitter2017': Twitter2017Processor,
-             'vast': VASTProcessor},
+             'vast': VASTProcessor,
+             'tnlpcc': tNLPCCProcessor},
+  'no_topic_stance': {'ans': ANSProcessor,
+                      'arc': ARCProcessor,
+                      'argmin': ArgMinProcessor,
+                      'fnc1': FNC1Processor,
+                      'iac1': IAC1Processor,
+                      'ibmcs': IBMCSProcessor,
+                      'nlpcc': NLPCCProcessor,
+                      'perspectrum': PerspectrumProcessor,
+                      'semeval2016t6': SemEval2016t6Processor,
+                      'snopes': SnopesProcessor,
+                      'trans_nlpcc': TransNLPCCProcessor,
+                      'twitter2015': Twitter2015Processor,
+                      'twitter2017': Twitter2017Processor,
+                      'vast': VASTProcessor,
+                      'tnlpcc': tNLPCCProcessor},
   'nli': {'indonli': IndonliProcessor},
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
@@ -370,6 +387,11 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   best_score = 0
   best_checkpoint = None
   tr_loss, logging_loss = 0.0, 0.0
+
+  if args.simcse:
+    cos_sim_fn = torch.nn.CosineSimilarity(dim=-1)
+    simcse_loss_fn = torch.nn.CrossEntropyLoss()
+
   model.zero_grad()
   train_iterator = trange(
     epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0], dynamic_ncols=True
@@ -425,6 +447,18 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         else:
           loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
+      if args.simcse:
+        outputs2 = model(**inputs, output_hidden_states=True)
+        v1 = outputs['hidden_states'][-1][:,0]
+        v2 = outputs2['hidden_states'][-1][:,0]
+
+        cos_sim = cos_sim_fn(v1.unsqueeze(1), v2.unsqueeze(0)) / args.simcse_temp
+        simcse_labels = torch.arange(cos_sim.size(0)).long().to(args.device)
+        simcse_loss = simcse_loss_fn(cos_sim, simcse_labels)
+
+        loss = args.alpha * loss + (1-args.alpha) * simcse_loss
+
+
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
       if args.gradient_accumulation_steps > 1:
@@ -447,6 +481,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         scheduler.step()  # Update learning rate schedule
         model.zero_grad()
         global_step += 1
+        del loss
 
         if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
           # Log metrics
@@ -458,6 +493,8 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.mlm:
               tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
+            if args.simcse:
+              tb_writer.add_scalar('simcse_loss', simcse_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
@@ -897,6 +934,8 @@ def main():
   parser.add_argument('--robust_size', type=float, required=False, help="size of ball to search for robust training")
   parser.add_argument('--robust_samples', type=int, default=3, help="number of samples to draw for robust training")
   parser.add_argument('--robust_neighbors', default='./counterfitted_neighbors.json', help="file containing neighbors for robust perturbation")
+  parser.add_argument('--simcse', action='store_true', help="use simcse in loss")
+  parser.add_argument('--simcse_temp', default=0.05, type=float)
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
