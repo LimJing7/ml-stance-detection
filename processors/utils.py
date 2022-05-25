@@ -467,3 +467,120 @@ def convert_examples_to_mlm_features(
         )
       )
   return features
+
+def convert_examples_to_parallel_features(
+  examples,
+  tokenizer,
+  max_length=512,
+  pad_on_left=False,
+  pad_token=0,
+  pad_token_segment_id=0,
+  mask_padding_with_zero=True,
+):
+  """
+  Loads a data file into a list of ``InputFeatures``
+  Args:
+    examples: List of ``StanceExamples`` or ``tf.data.Dataset`` containing the examples.
+    tokenizer: Instance of a tokenizer that will tokenize the examples
+    max_length: Maximum example length
+    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
+    pad_token: Padding token
+    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
+    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
+      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
+      actual values)
+  Returns:
+    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
+    containing the task-specific features. If the input is a list of ``InputExamples``, will return
+    a list of task-specific ``InputFeatures`` which can be fed to the model.
+  """
+
+  features = []
+  for (ex_index, example) in enumerate(examples):
+    if ex_index % 10000 == 0:
+      logger.info("Writing example %d" % (ex_index))
+    # if is_tf_dataset:
+    #   example = processor.get_example_from_tensor_dict(example)
+    #   example = processor.tfds_map(example)
+
+    # truncate
+    working_len = max_length
+    if not isinstance(tokenizer, XLMRobertaTokenizer):
+      raise NotImplementedError('This tokenizer is not supported')
+    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=True)
+    toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=True)
+
+    text_input_ids = toked_text["input_ids"]
+    topic_input_ids = toked_topic["input_ids"]
+
+    try:
+      text_token_type_ids = toked_text["token_type_ids"]
+    except KeyError:
+      text_token_type_ids = [pad_token_segment_id] * len(text_input_ids)
+
+    try:
+      topic_token_type_ids = toked_topic["token_type_ids"]
+    except KeyError:
+      topic_token_type_ids = [pad_token_segment_id] * len(topic_input_ids)
+
+    # The mask has 1 for real tokens and 0 for padding tokens. Only real
+    # tokens are attended to.
+    text_attention_mask = [1 if mask_padding_with_zero else 0] * len(text_input_ids)
+    topic_attention_mask = [1 if mask_padding_with_zero else 0] * len(topic_input_ids)
+
+    # Zero-pad text up to the sequence length.
+    text_padding_length = max_length - len(text_input_ids)
+    if pad_on_left:
+      text_input_ids = ([pad_token] * text_padding_length) + text_input_ids
+      text_attention_mask = ([0 if mask_padding_with_zero else 1] * text_padding_length) + text_attention_mask
+      text_token_type_ids = ([pad_token_segment_id] * text_padding_length) + text_token_type_ids
+    else:
+      text_input_ids = text_input_ids + ([pad_token] * text_padding_length)
+      text_attention_mask = text_attention_mask + ([0 if mask_padding_with_zero else 1] * text_padding_length)
+      text_token_type_ids = text_token_type_ids + ([pad_token_segment_id] * text_padding_length)
+
+    # Zero-pad topic up to the sequence length.
+    topic_padding_length = max_length - len(topic_input_ids)
+    if pad_on_left:
+      topic_input_ids = ([pad_token] * topic_padding_length) + topic_input_ids
+      topic_attention_mask = ([0 if mask_padding_with_zero else 1] * topic_padding_length) + topic_attention_mask
+      topic_token_type_ids = ([pad_token_segment_id] * topic_padding_length) + topic_token_type_ids
+    else:
+      topic_input_ids = topic_input_ids + ([pad_token] * topic_padding_length)
+      topic_attention_mask = topic_attention_mask + ([0 if mask_padding_with_zero else 1] * topic_padding_length)
+      topic_token_type_ids = topic_token_type_ids + ([pad_token_segment_id] * topic_padding_length)
+
+    assert len(text_input_ids) == max_length, "Error with input length {} vs {}".format(len(text_input_ids), max_length)
+    assert len(text_attention_mask) == max_length, "Error with input length {} vs {}".format(
+      len(text_attention_mask), max_length
+    )
+    assert len(text_token_type_ids) == max_length, "Error with input length {} vs {}".format(
+      len(text_token_type_ids), max_length
+    )
+
+    assert len(topic_input_ids) == max_length, "Error with input length {} vs {}".format(len(topic_input_ids), max_length)
+    assert len(topic_attention_mask) == max_length, "Error with input length {} vs {}".format(
+      len(topic_attention_mask), max_length
+    )
+    assert len(topic_token_type_ids) == max_length, "Error with input length {} vs {}".format(
+      len(topic_token_type_ids), max_length
+    )
+
+    if ex_index < 5:
+      logger.info("*** Example ***")
+      logger.info("guid: %s" % (example.guid))
+      logger.info("input_ids: %s" % " ".join([str(x) for x in text_input_ids]))
+      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(text_input_ids)))
+      logger.info("attention_mask: %s" % " ".join([str(x) for x in text_attention_mask]))
+      logger.info("token_type_ids: %s" % " ".join([str(x) for x in text_token_type_ids]))
+
+    input_ids = (text_input_ids, topic_input_ids)
+    attention_mask = (text_attention_mask, topic_attention_mask)
+    token_type_ids = (text_token_type_ids, topic_token_type_ids)
+
+    features.append(
+      InputFeatures(
+        input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
+      )
+    )
+  return features

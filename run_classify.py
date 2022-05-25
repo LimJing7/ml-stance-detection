@@ -51,11 +51,12 @@ from transformers import (
 import transformers
 from processors.amazonzh import AmazonZhProcessor
 from processors.idclickbait import IdClickbaitProcessor
+from processors.parallel_nli import ParallelNLIProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
 from processors.twitter2015 import Twitter2015Processor
 
-from processors.utils import convert_examples_to_mlm_features
+from processors.utils import convert_examples_to_mlm_features, convert_examples_to_parallel_features
 
 from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
@@ -126,7 +127,8 @@ PROCESSORS = {
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
   'pawsx': {'pawsxen': PAWSXEnProcessor,
-            'pawsxzh': PAWSXZhProcessor}
+            'pawsxzh': PAWSXZhProcessor},
+  'parallel': {'parallel_nli': ParallelNLIProcessor},
 
 }
 
@@ -295,7 +297,7 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, model, tokenizer, lang2id=None):
+def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None):
   """Train the model."""
   if args.local_rank in [-1, 0]:
     tb_writer = SummaryWriter(f'runs/{args.output_dir.split("/")[-1]}')
@@ -306,6 +308,11 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
   train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
   train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+
+  if args.sup_simcse:
+    parallel_sampler = RandomSampler(parallel_dataset) if args.local_rank == -1 else DistributedSampler(parallel_dataset)
+    parallel_dataloader = DataLoader(parallel_dataset, sampler=parallel_sampler, batch_size=args.train_batch_size)
+    parallel_iterator = iter(parallel_dataloader)
 
   if args.max_steps > 0:
     t_total = args.max_steps
@@ -388,7 +395,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
   best_checkpoint = None
   tr_loss, logging_loss = 0.0, 0.0
 
-  if args.simcse:
+  if args.nonsup_simcse or args.sup_simcse:
     cos_sim_fn = torch.nn.CosineSimilarity(dim=-1)
     simcse_loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -447,10 +454,32 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
         else:
           loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
-      if args.simcse:
+      if args.nonsup_simcse:
         outputs2 = model(**inputs, output_hidden_states=True)
         v1 = outputs['hidden_states'][-1][:,0]
         v2 = outputs2['hidden_states'][-1][:,0]
+
+        cos_sim = cos_sim_fn(v1.unsqueeze(1), v2.unsqueeze(0)) / args.simcse_temp
+        simcse_labels = torch.arange(cos_sim.size(0)).long().to(args.device)
+        simcse_loss = simcse_loss_fn(cos_sim, simcse_labels)
+
+        loss = args.alpha * loss + (1-args.alpha) * simcse_loss
+
+      if args.sup_simcse:
+        try:
+          parallel_batch = next(parallel_iterator)
+        except StopIteration:
+          parallel_iterator = iter(parallel_dataloader)
+          parallel_batch = next(parallel_iterator)
+        parallel_inputs = {"input_ids": parallel_batch[0].to(args.device), "attention_mask": parallel_batch[1].to(args.device)}
+
+        inputs1 = {k:v[:, 0] for k,v in parallel_inputs.items()}
+        inputs2 = {k:v[:, 1] for k,v in parallel_inputs.items()}
+
+        l1_outputs = model(**inputs1, output_hidden_states=True)
+        l2_outputs = model(**inputs2, output_hidden_states=True)
+        v1 = l1_outputs['hidden_states'][-1][:,0]
+        v2 = l2_outputs['hidden_states'][-1][:,0]
 
         cos_sim = cos_sim_fn(v1.unsqueeze(1), v2.unsqueeze(0)) / args.simcse_temp
         simcse_labels = torch.arange(cos_sim.size(0)).long().to(args.device)
@@ -493,7 +522,7 @@ def train(args, train_dataset, model, tokenizer, lang2id=None):
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.mlm:
               tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
-            if args.simcse:
+            if args.nonsup_simcse:
               tb_writer.add_scalar('simcse_loss', simcse_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
@@ -828,6 +857,78 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   return dataset
 
 
+def load_and_cache_parallel_examples(args, dataset, tokenizer, split='train', evaluate=False):
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank not in [-1, 0] and not evaluate:
+    torch.distributed.barrier()
+
+  processor = PROCESSORS['parallel'][dataset]()
+  language = processor.language
+  # Load data features from cache or dataset file
+  lc = '_lc' if args.do_lower_case else ''
+
+  cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
+
+  cached_features_file = os.path.join(
+    args.data_dir,
+    "cached_{}_{}_{}_{}_{}_{}_{}".format(
+      dataset,
+      split,
+      cache_model_name_or_path,
+      str(args.max_seq_length),
+      'parallel',
+      str(language),
+      lc,
+    ),
+  )
+  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+    logger.info("Loading features from cached file %s", cached_features_file)
+    features = torch.load(cached_features_file)
+  else:
+    logger.info("Creating features from dataset file at %s", args.data_dir)
+    label_list = processor.get_labels()
+    if split == 'train':
+      examples = processor.get_train_examples(args.data_dir)
+    elif split == 'translate-train':
+      examples = processor.get_translate_train_examples(args.data_dir)
+    elif split == 'translate-test':
+      examples = processor.get_translate_test_examples(args.data_dir)
+    elif split == 'dev':
+      examples = processor.get_dev_examples(args.data_dir)
+    elif split == 'pseudo_test':
+      examples = processor.get_pseudo_test_examples(args.data_dir)
+    else:
+      examples = processor.get_test_examples(args.data_dir)
+
+    features = convert_examples_to_parallel_features(
+      examples,
+      tokenizer,
+      max_length=args.max_seq_length,
+      pad_on_left=False,
+      pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+      pad_token_segment_id=0,
+    )
+    if args.local_rank in [-1, 0]:
+      logger.info("Saving features into cached file %s", cached_features_file)
+      torch.save(features, cached_features_file)
+
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank == 0 and not evaluate:
+    torch.distributed.barrier()
+
+  # Convert to Tensors and build dataset
+  all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+  all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+  all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+  if args.model_type == 'xlm':
+    raise NotImplementedError('xlm model not supported')
+  else:
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids)
+  return dataset
+
+
 def main():
   parser = argparse.ArgumentParser()
 
@@ -934,8 +1035,10 @@ def main():
   parser.add_argument('--robust_size', type=float, required=False, help="size of ball to search for robust training")
   parser.add_argument('--robust_samples', type=int, default=3, help="number of samples to draw for robust training")
   parser.add_argument('--robust_neighbors', default='./counterfitted_neighbors.json', help="file containing neighbors for robust perturbation")
-  parser.add_argument('--simcse', action='store_true', help="use simcse in loss")
+  parser.add_argument('--nonsup_simcse', action='store_true', help="use nonsupervised simcse in loss")
+  parser.add_argument('--sup_simcse', action='store_true', help="use supervised simcse in loss")
   parser.add_argument('--simcse_temp', default=0.05, type=float)
+  parser.add_argument('--parallel_dataset', help="parallel dataset for supervised simcse")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1155,7 +1258,9 @@ def main():
         weighted_train_datasets.append(new_train_dataset)
       train_datasets = weighted_train_datasets
     train_dataset = ConcatDataset(train_datasets)
-    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, model, tokenizer, lang2id)
+    if args.parallel_dataset is not None:
+      parallel_dataset = load_and_cache_parallel_examples(args, args.parallel_dataset, tokenizer)
+    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
 
