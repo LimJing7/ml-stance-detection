@@ -21,7 +21,7 @@ import logging
 import os
 
 from transformers import DataProcessor
-from .utils import StanceExample
+from .utils import TripleSentExample
 
 from datasets import load_dataset
 
@@ -52,7 +52,7 @@ class ParallelNLIProcessor(DataProcessor):
                 en_text = row[en_id]
                 zh_text = row[zh_id]
 
-                examples.append(StanceExample(guid=guid, topic=en_text, text=zh_text))
+                examples.append(TripleSentExample(guid=guid, sent0=en_text, sent1=zh_text))
 
         return examples
 

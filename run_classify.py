@@ -51,6 +51,7 @@ from transformers import (
 import transformers
 from processors.amazonzh import AmazonZhProcessor
 from processors.idclickbait import IdClickbaitProcessor
+from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
@@ -128,7 +129,8 @@ PROCESSORS = {
                      'idclickbait': IdClickbaitProcessor},
   'pawsx': {'pawsxen': PAWSXEnProcessor,
             'pawsxzh': PAWSXZhProcessor},
-  'parallel': {'parallel_nli': ParallelNLIProcessor},
+  'parallel': {'parallel_nli': ParallelNLIProcessor,
+               'nli_for_simcse': NLIforSIMCSEProcessor},
 
 }
 
@@ -482,6 +484,15 @@ def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None)
         v2 = l2_outputs['hidden_states'][-1][:,0]
 
         cos_sim = cos_sim_fn(v1.unsqueeze(1), v2.unsqueeze(0)) / args.simcse_temp
+
+        if parallel_inputs['input_ids'].shape[1] == 3:
+          inputs3 = {k:v[:, 2] for k,v in parallel_inputs.items()}
+          l3_outputs = model(**inputs3, output_hidden_states=True)
+          v3 = l3_outputs['hidden_states'][-1][:,0]
+          v1_v3_cos_sim = cos_sim_fn(v1.unsqueeze(1), v3.unsqueeze(0)) / args.simcse_temp
+          cos_sim = torch.cat([cos_sim, v1_v3_cos_sim], 1)
+          # add weights here if needed
+
         simcse_labels = torch.arange(cos_sim.size(0)).long().to(args.device)
         simcse_loss = simcse_loss_fn(cos_sim, simcse_labels)
 

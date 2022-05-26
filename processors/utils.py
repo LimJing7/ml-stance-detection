@@ -62,6 +62,28 @@ class StanceExample(InputExample):
     self.label = label
     self.language = language
 
+
+class TripleSentExample(InputExample):
+  """
+  A single training/text example with three sentences
+  Args:
+    guid: Unique id for the example.
+    sent0: string. The untokenized text of the first sequence.
+    sent1: string. The untokenized text of the second sequence.
+    sent2: (Optional) string. The untokenized text of the third sequence.
+    label: (Optional) string. The label of the example. This should be
+    specified for train and dev examples, but not for test examples.
+  """
+
+  def __init__(self, guid, sent0, sent1, sent2=None, label=None, language=None):
+    self.guid = guid
+    self.sent0 = sent0
+    self.sent1 = sent1
+    self.sent2 = sent2
+    self.label = label
+    self.language = language
+
+
 class InputFeatures(object):
   """
   A single set of features of data.
@@ -468,6 +490,40 @@ def convert_examples_to_mlm_features(
       )
   return features
 
+def process_one_sentence(sentence, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero):
+  toked_sent = tokenizer.encode_plus(sentence, add_special_tokens=True, max_length=max_length, truncation=True)
+  input_ids = toked_sent["input_ids"]
+  try:
+    token_type_ids = toked_sent["token_type_ids"]
+  except KeyError:
+    token_type_ids = [pad_token_segment_id] * len(input_ids)
+
+  # The mask has 1 for real tokens and 0 for padding tokens. Only real
+  # tokens are attended to.
+  attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+
+  # Zero-pad sent1 up to the sequence length.
+  padding_length = max_length - len(input_ids)
+  if pad_on_left:
+    input_ids = ([pad_token] * padding_length) + input_ids
+    attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
+    token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+  else:
+    input_ids = input_ids + ([pad_token] * padding_length)
+    attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+    token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+
+  assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+  assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
+    len(attention_mask), max_length
+  )
+  assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
+    len(token_type_ids), max_length
+  )
+
+  return input_ids, attention_mask, token_type_ids
+
+
 def convert_examples_to_parallel_features(
   examples,
   tokenizer,
@@ -507,80 +563,36 @@ def convert_examples_to_parallel_features(
     working_len = max_length
     if not isinstance(tokenizer, XLMRobertaTokenizer):
       raise NotImplementedError('This tokenizer is not supported')
-    toked_text = tokenizer.encode_plus(example.text, add_special_tokens=True)
-    toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=True)
 
-    text_input_ids = toked_text["input_ids"]
-    topic_input_ids = toked_topic["input_ids"]
-
-    try:
-      text_token_type_ids = toked_text["token_type_ids"]
-    except KeyError:
-      text_token_type_ids = [pad_token_segment_id] * len(text_input_ids)
-
-    try:
-      topic_token_type_ids = toked_topic["token_type_ids"]
-    except KeyError:
-      topic_token_type_ids = [pad_token_segment_id] * len(topic_input_ids)
-
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    text_attention_mask = [1 if mask_padding_with_zero else 0] * len(text_input_ids)
-    topic_attention_mask = [1 if mask_padding_with_zero else 0] * len(topic_input_ids)
-
-    # Zero-pad text up to the sequence length.
-    text_padding_length = max_length - len(text_input_ids)
-    if pad_on_left:
-      text_input_ids = ([pad_token] * text_padding_length) + text_input_ids
-      text_attention_mask = ([0 if mask_padding_with_zero else 1] * text_padding_length) + text_attention_mask
-      text_token_type_ids = ([pad_token_segment_id] * text_padding_length) + text_token_type_ids
-    else:
-      text_input_ids = text_input_ids + ([pad_token] * text_padding_length)
-      text_attention_mask = text_attention_mask + ([0 if mask_padding_with_zero else 1] * text_padding_length)
-      text_token_type_ids = text_token_type_ids + ([pad_token_segment_id] * text_padding_length)
-
-    # Zero-pad topic up to the sequence length.
-    topic_padding_length = max_length - len(topic_input_ids)
-    if pad_on_left:
-      topic_input_ids = ([pad_token] * topic_padding_length) + topic_input_ids
-      topic_attention_mask = ([0 if mask_padding_with_zero else 1] * topic_padding_length) + topic_attention_mask
-      topic_token_type_ids = ([pad_token_segment_id] * topic_padding_length) + topic_token_type_ids
-    else:
-      topic_input_ids = topic_input_ids + ([pad_token] * topic_padding_length)
-      topic_attention_mask = topic_attention_mask + ([0 if mask_padding_with_zero else 1] * topic_padding_length)
-      topic_token_type_ids = topic_token_type_ids + ([pad_token_segment_id] * topic_padding_length)
-
-    assert len(text_input_ids) == max_length, "Error with input length {} vs {}".format(len(text_input_ids), max_length)
-    assert len(text_attention_mask) == max_length, "Error with input length {} vs {}".format(
-      len(text_attention_mask), max_length
-    )
-    assert len(text_token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(text_token_type_ids), max_length
-    )
-
-    assert len(topic_input_ids) == max_length, "Error with input length {} vs {}".format(len(topic_input_ids), max_length)
-    assert len(topic_attention_mask) == max_length, "Error with input length {} vs {}".format(
-      len(topic_attention_mask), max_length
-    )
-    assert len(topic_token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(topic_token_type_ids), max_length
-    )
+    sent1_input_ids, sent1_attention_mask, sent1_token_type_ids = process_one_sentence(example.sent0, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero)
+    sent2_input_ids, sent2_attention_mask, sent2_token_type_ids = process_one_sentence(example.sent1, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero)
+    if example.sent2 is not None:
+      sent3_input_ids, sent3_attention_mask, sent3_token_type_ids = process_one_sentence(example.sent2, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero)
 
     if ex_index < 5:
       logger.info("*** Example ***")
       logger.info("guid: %s" % (example.guid))
-      logger.info("input_ids: %s" % " ".join([str(x) for x in text_input_ids]))
-      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(text_input_ids)))
-      logger.info("attention_mask: %s" % " ".join([str(x) for x in text_attention_mask]))
-      logger.info("token_type_ids: %s" % " ".join([str(x) for x in text_token_type_ids]))
+      logger.info("input_ids: %s" % " ".join([str(x) for x in sent1_input_ids]))
+      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(sent1_input_ids)))
+      logger.info("attention_mask: %s" % " ".join([str(x) for x in sent1_attention_mask]))
+      logger.info("token_type_ids: %s" % " ".join([str(x) for x in sent1_token_type_ids]))
 
-    input_ids = (text_input_ids, topic_input_ids)
-    attention_mask = (text_attention_mask, topic_attention_mask)
-    token_type_ids = (text_token_type_ids, topic_token_type_ids)
+    if example.sent2 is not None:
+      input_ids = (sent1_input_ids, sent2_input_ids, sent3_input_ids)
+      attention_mask = (sent1_attention_mask, sent2_attention_mask, sent3_attention_mask)
+      token_type_ids = (sent1_token_type_ids, sent2_token_type_ids, sent3_token_type_ids)
 
-    flipped_input_ids = (topic_input_ids, text_input_ids)
-    flipped_attention_mask = (topic_attention_mask, text_attention_mask)
-    flipped_token_type_ids = (topic_token_type_ids, text_token_type_ids)
+      flipped_input_ids = (sent2_input_ids, sent1_input_ids, sent3_input_ids)
+      flipped_attention_mask = (sent2_attention_mask, sent1_attention_mask, sent3_attention_mask)
+      flipped_token_type_ids = (sent2_token_type_ids, sent1_token_type_ids, sent3_token_type_ids)
+    else:
+      input_ids = (sent1_input_ids, sent2_input_ids)
+      attention_mask = (sent1_attention_mask, sent2_attention_mask)
+      token_type_ids = (sent1_token_type_ids, sent2_token_type_ids)
+
+      flipped_input_ids = (sent2_input_ids, sent1_input_ids)
+      flipped_attention_mask = (sent2_attention_mask, sent1_attention_mask)
+      flipped_token_type_ids = (sent2_token_type_ids, sent1_token_type_ids)
 
     features.append(
       InputFeatures(
