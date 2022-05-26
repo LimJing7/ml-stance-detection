@@ -578,9 +578,19 @@ def convert_examples_to_parallel_features(
     attention_mask = (text_attention_mask, topic_attention_mask)
     token_type_ids = (text_token_type_ids, topic_token_type_ids)
 
+    flipped_input_ids = (topic_input_ids, text_input_ids)
+    flipped_attention_mask = (topic_attention_mask, text_attention_mask)
+    flipped_token_type_ids = (topic_token_type_ids, text_token_type_ids)
+
     features.append(
       InputFeatures(
         input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
+      )
+    )
+
+    features.append(
+      InputFeatures(
+        input_ids=flipped_input_ids, attention_mask=flipped_attention_mask, token_type_ids=flipped_token_type_ids,
       )
     )
   return features
