@@ -522,7 +522,7 @@ def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None)
           if (args.local_rank == -1 and args.evaluate_during_training):
             if args.mlm:
               tb_writer.add_scalar('mlm_loss', mlm_loss, global_step)
-            if args.nonsup_simcse:
+            if args.nonsup_simcse or args.sup_simcse:
               tb_writer.add_scalar('simcse_loss', simcse_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
