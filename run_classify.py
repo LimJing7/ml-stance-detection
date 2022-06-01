@@ -56,8 +56,10 @@ from processors.parallel_nli import ParallelNLIProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
 from processors.twitter2015 import Twitter2015Processor
+from processors.trans_nli_for_simcse import TransNLIforSIMCSEProcessor
+from processors.webtext2019 import Webtext2019Processor
 
-from processors.utils import convert_examples_to_mlm_features, convert_examples_to_parallel_features
+from processors.utils import convert_examples_to_stance_features, convert_examples_to_parallel_features, convert_examples_to_mlm_features
 
 from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
@@ -130,8 +132,9 @@ PROCESSORS = {
   'pawsx': {'pawsxen': PAWSXEnProcessor,
             'pawsxzh': PAWSXZhProcessor},
   'parallel': {'parallel_nli': ParallelNLIProcessor,
-               'nli_for_simcse': NLIforSIMCSEProcessor},
-
+               'nli_for_simcse': NLIforSIMCSEProcessor,
+               'trans_nli_for_simcse': TransNLIforSIMCSEProcessor},
+  'mlm': {'webtext2019': Webtext2019Processor},
 }
 
 
@@ -299,7 +302,7 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None):
+def train(args, train_dataset, parallel_dataset, mlm_dataset, model, tokenizer, lang2id=None):
   """Train the model."""
   if args.local_rank in [-1, 0]:
     tb_writer = SummaryWriter(f'runs/{args.output_dir.split("/")[-1]}')
@@ -315,6 +318,11 @@ def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None)
     parallel_sampler = RandomSampler(parallel_dataset) if args.local_rank == -1 else DistributedSampler(parallel_dataset)
     parallel_dataloader = DataLoader(parallel_dataset, sampler=parallel_sampler, batch_size=args.train_batch_size)
     parallel_iterator = iter(parallel_dataloader)
+
+  if args.extra_mlm:
+    mlm_sampler = RandomSampler(mlm_dataset) if args.local_rank == -1 else DistributedSampler(mlm_dataset)
+    mlm_dataloader = DataLoader(mlm_dataset, sampler=mlm_sampler, batch_size=args.train_batch_size)
+    mlm_iterator = iter(mlm_dataloader)
 
   if args.max_steps > 0:
     t_total = args.max_steps
@@ -498,6 +506,19 @@ def train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id=None)
 
         loss = args.alpha * loss + (1-args.alpha) * simcse_loss
 
+      if args.extra_mlm:
+        try:
+          mlm_batch = next(mlm_iterator)
+        except StopIteration:
+          mlm_iterator = iter(mlm_dataloader)
+          mlm_batch = next(mlm_iterator)
+        mlm_inputs = {"input_ids": mlm_batch[0].to(args.device), "attention_mask": mlm_batch[1].to(args.device), "labels": mlm_batch[3].to(args.device)}
+
+        inputs = {k:v[:, 0] for k,v in mlm_inputs.items()}
+        outputs = model(**inputs, output_hidden_states=True)
+        
+        mlm_loss = outputs['loss']
+        loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -817,7 +838,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     if da == f'_w_da_{args.robust_samples}':
       examples = perturb(examples, args.robust_samples, args.robust_neighbors)
 
-    features = convert_examples_to_mlm_features(
+    features = convert_examples_to_stance_features(
       examples,
       tokenizer,
       task,
@@ -940,6 +961,81 @@ def load_and_cache_parallel_examples(args, dataset, tokenizer, split='train', ev
   return dataset
 
 
+def load_and_cache_mlm_examples(args, dataset, tokenizer, split='train', evaluate=False):
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank not in [-1, 0] and not evaluate:
+    torch.distributed.barrier()
+
+  processor = PROCESSORS['mlm'][dataset]()
+  language = processor.language
+  # Load data features from cache or dataset file
+  lc = '_lc' if args.do_lower_case else ''
+
+  cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
+
+  cached_features_file = os.path.join(
+    args.data_dir,
+    "cached_{}_{}_{}_{}_{}_{}_{}_{}".format(
+      dataset,
+      split,
+      cache_model_name_or_path,
+      str(args.max_seq_length),
+      'extra_mlm',
+      str(args.mlm_probability),
+      str(language),
+      lc,
+    ),
+  )
+  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+    logger.info("Loading features from cached file %s", cached_features_file)
+    features = torch.load(cached_features_file)
+  else:
+    logger.info("Creating features from dataset file at %s", args.data_dir)
+    label_list = processor.get_labels()
+    if split == 'train':
+      examples = processor.get_train_examples(args.data_dir)
+    elif split == 'translate-train':
+      examples = processor.get_translate_train_examples(args.data_dir)
+    elif split == 'translate-test':
+      examples = processor.get_translate_test_examples(args.data_dir)
+    elif split == 'dev':
+      examples = processor.get_dev_examples(args.data_dir)
+    elif split == 'pseudo_test':
+      examples = processor.get_pseudo_test_examples(args.data_dir)
+    else:
+      examples = processor.get_test_examples(args.data_dir)
+
+    features = convert_examples_to_mlm_features(
+      examples,
+      tokenizer,
+      max_length=args.max_seq_length,
+      pad_on_left=False,
+      pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+      pad_token_segment_id=0,
+    )
+    if args.local_rank in [-1, 0]:
+      logger.info("Saving features into cached file %s", cached_features_file)
+      torch.save(features, cached_features_file)
+
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank == 0 and not evaluate:
+    torch.distributed.barrier()
+
+  # Convert to Tensors and build dataset
+  all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+  all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+  all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+  all_mlm_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+  if args.model_type == 'xlm':
+    raise NotImplementedError('xlm model not supported')
+  else:
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_mlm_labels)
+  return dataset
+
+
+
 def main():
   parser = argparse.ArgumentParser()
 
@@ -1050,6 +1146,8 @@ def main():
   parser.add_argument('--sup_simcse', action='store_true', help="use supervised simcse in loss")
   parser.add_argument('--simcse_temp', default=0.05, type=float)
   parser.add_argument('--parallel_dataset', help="parallel dataset for supervised simcse")
+  parser.add_argument('--extra_mlm', action='store_true', help="use supervised simcse in loss")
+  parser.add_argument('--mlm_dataset', help="mlm dataset for additional mlm")
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1271,7 +1369,9 @@ def main():
     train_dataset = ConcatDataset(train_datasets)
     if args.parallel_dataset is not None:
       parallel_dataset = load_and_cache_parallel_examples(args, args.parallel_dataset, tokenizer)
-    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, parallel_dataset, model, tokenizer, lang2id)
+    if args.mlm_dataset is not None:
+      mlm_dataset = load_and_cache_mlm_examples(args, args.mlm_dataset, tokenizer)
+    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, parallel_dataset, mlm_dataset, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
 
