@@ -162,12 +162,12 @@ Using 2 negative
 
 ### With and without topic data
 ####  5 fold, mean of middle 3
-|                   | no mlm, no neg, no robust | 0.4 mlm, 2 neg, rs-rp | no mlm, 2 neg, rs-rp | 0.15 mlm, 2 neg, no robust |
-|-------------------|:-------------------------:|:---------------------:|:--------------------:|:--------------------------:|
-| nlpcc w topic     |           0.448           |         0.460         |        0.485         |           0.460            |
-| t-nlpcc w topic   |           0.569           |         0.555         |        0.572         |           0.562            |
-| nlpcc w/o topic   |           0.295           |         0.260         |        0.315         |           0.262            |
-| t-nlpcc w/o topic |           0.331           |         0.312         |        0.333         |           0.314            |
+|                   | no mlm, no neg, no robust | 0.4 mlm, 2 neg, rs-rp | no mlm, 2 neg, rs-rp | 0.15 mlm, 2 neg, no robust | 0.15 mlm, 2 neg, no robust (xlmr) |
+|-------------------|:-------------------------:|:---------------------:|:--------------------:|:--------------------------:|:---------------------------------:|
+| nlpcc w topic     |           0.448           |         0.460         |        0.485         |           0.460            |               0.450               |
+| t-nlpcc w topic   |           0.569           |         0.555         |        0.572         |           0.562            |               0.549               |
+| nlpcc w/o topic   |           0.295           |         0.260         |        0.315         |           0.262            |               0.145               |
+| t-nlpcc w/o topic |           0.331           |         0.312         |        0.333         |           0.314            |               0.257               |
 
 ####
 |                   | trained on nlpcc | trained on t-nlpcc | trained on en |
@@ -179,10 +179,22 @@ Using 2 negative
 
 
 ### SIMCSE
-|         | unsupervised |
-|---------|:------------:|
-| nlpcc   |    0.454     |
-| t-nlpcc |    0.557     |
+|         | unsupervised | en-zh supervised | supervised with hard neg | supervised with translated hard neg |
+|---------|:------------:|:----------------:|:------------------------:|:-----------------------------------:|
+| nlpcc   |    0.454     |      0.475       |          0.487           |                0.480                |
+| t-nlpcc |    0.557     |      0.565       |          0.578           |                0.563                |
+
+### With ZH MLM
+|         | webtext2019 | wikipedia-zh |
+|---------|:-----------:|:------------:|
+| nlpcc   |    0.473    |    0.482     |
+| t-nlpcc |    0.534    |    0.523     |
+
+### Chinese language models
+|         | bert-base-chinese | hfl/chinese-roberta-wwm-ext |
+|---------|:-----------------:|:---------------------------:|
+| nlpcc   |       0.494       |            0.526            |
+| t-nlpcc |
 
 
 - Add more datasets
