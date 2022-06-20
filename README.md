@@ -110,7 +110,7 @@ For the results on this page, we are only listing results that come from trainin
 
 For results from supervised training on in-domain data, refer to [single_dataset_results.md](./single_dataset_results.md). However, note that some of them might be outdated and trained using previous versions of the code.
 
-For comparison, the macro-F1 in Hardalov et al. is 0.458.
+For comparison, the 0-shot macro-F1 in Hardalov et al. is 0.458 and the full-training result is 0.587.
 
 
 ### Different Labels
@@ -194,7 +194,34 @@ Using 2 negative
 |         | bert-base-chinese | hfl/chinese-roberta-wwm-ext |
 |---------|:-----------------:|:---------------------------:|
 | nlpcc   |       0.494       |            0.526            |
+<<<<<<< Updated upstream
 | t-nlpcc |
+=======
+| t-nlpcc |       0.312       |            0.256            |
+
+### with full nlpcc dataset
+| nlpcc   | 0.615 |
+| t-nlpcc | 0.569 |
+
+### m-bert comparison
+| no mlm, 2 neg, rs-rp (mbert) |
+|:----------------------------:|
+|             0.401            |
+|             0.518            |
+|             0.356            |
+|             0.247            |
+
+### With UD
+|         | ewt - gsdsimp | ewt - gsdsimp pud hk cfl |
+|---------|:-------------:|:------------------------:|
+| nlpcc   |     0.477     |          0.451           |
+| t-nlpcc |     0.563     |          0.577           |
+
+### Stance-qa
+| nlpcc   | 0.444 |
+| t-nlpcc | 0.561 |
+
+>>>>>>> Stashed changes
 
 
 - Add more datasets

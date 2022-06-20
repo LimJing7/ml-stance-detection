@@ -4,7 +4,8 @@ import json
 import logging
 import torch
 import random
-from transformers import XLMTokenizer, XLMRobertaTokenizer
+from transformers import BertTokenizer, XLMTokenizer, XLMRobertaTokenizer
+import ud_head
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,26 @@ class TripleSentExample(InputExample):
     self.language = language
 
 
+class UDExample(InputExample):
+  """
+  A single training/text example with three sentences
+  Args:
+    guid: Unique id for the example.
+    sent0: string. The untokenized text of the first sequence.
+    sent1: string. The untokenized text of the second sequence.
+    sent2: (Optional) string. The untokenized text of the third sequence.
+    label: (Optional) string. The label of the example. This should be
+    specified for train and dev examples, but not for test examples.
+  """
+
+  def __init__(self, guid, text, tokens, head, deprel):
+    self.guid = guid
+    self.text = text
+    self.tokens = tokens
+    self.head = head
+    self.deprel = deprel
+
+
 class InputFeatures(object):
   """
   A single set of features of data.
@@ -135,6 +156,26 @@ class StanceFeatures(InputFeatures):
     self.label = label
     self.langs = langs
     self.mlm_labels = mlm_labels
+
+
+class UDFeatures(InputFeatures):
+  """
+  A single set of features of data.
+  Args:
+    ids: Indices of input sequence tokens in the vocabulary.
+    attention_mask: Mask to avoid performing attention on padding token indices.
+      Mask values selected in ``[0, 1]``:
+      Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
+    ud_arc: the UD head of this UD-token
+    ud_rel: The UD relation to the head
+    tok_lens: Number of LM-tokens per UD-token
+  """
+  def __init__(self, ids, attention_mask, ud_arc, ud_rel, tok_lens):
+    self.ids = ids
+    self.attention_mask = attention_mask
+    self.ud_arc = ud_arc
+    self.ud_rel = ud_rel
+    self.tok_lens = tok_lens
 
 
 def convert_examples_to_features(
@@ -317,31 +358,43 @@ def convert_examples_to_stance_features(
 
   if task == 'stance':
     pattern = f'The stance of the following is {tokenizer.mask_token} the '
-    pattern_length = 11
-    text_index = 7
-    topic_index = 10
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('The stance of the following', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode(f'The stance of the following is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+    one_sided = False
+  elif task == 'stance_qa':
+    pattern = f'Question: What is the stance of with respect to ? Answer: {tokenizer.mask_token}'
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('Question: What is the stance of', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode('Question: What is the stance of with respect to', add_special_tokens=True)) - 1
+    one_sided = False
+  if task == 'zh_stance':
+    pattern = f'以下的立场是{tokenizer.mask_token}'
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('以下', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode(f'以下的立场是{tokenizer.mask_token}', add_special_tokens=True)) - 1
     one_sided = False
   elif task == 'no_topic_stance':
     pattern = f'The stance of the following is {tokenizer.mask_token}'
-    pattern_length = 10
-    text_index = 7
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('The stance of the following', add_special_tokens=True)) - 1
     one_sided = True
   elif task == 'nli':
     pattern = f'This premise: {tokenizer.mask_token} this hypothesis: '
-    pattern_length = 11
-    text_index = 5
-    topic_index = 10
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('This premise: ', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode(f'This premise: {tokenizer.mask_token} this hypothesis: ', add_special_tokens=True)) - 1
     one_sided = False
   elif task == 'classification':
     pattern = f'This comment is {tokenizer.mask_token}'
-    pattern_length = 6
-    text_index = 3
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('This comment', add_special_tokens=True)) - 1
     one_sided = True
   elif task == 'pawx':
     pattern = f'Sentence 1 and sentence 2 {tokenizer.mask_token} paraphases of each other.'
-    pattern_length = 16
-    text_index = 4
-    topic_index = 7
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('Sentence 1', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode('Sentence 1 and sentence 2', add_special_tokens=True)) - 1
     one_sided = False
   else:
     raise NotImplementedError('This task is not supported')
@@ -358,7 +411,7 @@ def convert_examples_to_stance_features(
 
     # truncate
     working_len = max_length - pattern_length
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
+    if not (isinstance(tokenizer, XLMRobertaTokenizer) or isinstance(tokenizer, BertTokenizer)):
       raise NotImplementedError('This tokenizer is not supported')
     toked_text = tokenizer.encode_plus(example.text, add_special_tokens=False)
     text_len = len(toked_text['input_ids'])
@@ -421,10 +474,7 @@ def convert_examples_to_stance_features(
       input_ids[-1] = tokenizer.mask_token_id
       input_ids[-2] = tokenizer.sep_token_id
 
-    try:
-      token_type_ids = inputs["token_type_ids"]
-    except KeyError:
-      token_type_ids = [pad_token_segment_id] * len(input_ids)
+    token_type_ids = [pad_token_segment_id] * len(input_ids)  # only 1 sentence is created
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
@@ -563,7 +613,7 @@ def convert_examples_to_parallel_features(
 
     # truncate
     working_len = max_length
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
+    if not (isinstance(tokenizer, XLMRobertaTokenizer) or isinstance(tokenizer, BertTokenizer)):
       raise NotImplementedError('This tokenizer is not supported')
 
     sent1_input_ids, sent1_attention_mask, sent1_token_type_ids = process_one_sentence(example.sent0, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero)
@@ -618,8 +668,9 @@ def convert_examples_to_mlm_features(
   pad_token_segment_id=0,
   mask_padding_with_zero=True,
   mlm_probability=0,
+  join_examples=False
 ):
-    
+
   """
   Loads a data file into a list of ``InputFeatures``
   Args:
@@ -633,73 +684,247 @@ def convert_examples_to_mlm_features(
       and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
       actual values)
     mlm_probability: The rate of tokens to mask
+    join_examples: If set to ``True``, will combine examples so that each output is of max length
   Returns:
     If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
     containing the task-specific features. If the input is a list of ``InputExamples``, will return
     a list of task-specific ``InputFeatures`` which can be fed to the model.
   """
   features = []
+  if join_examples:
+    toked_text = []
+    long = False
+    for (ex_index, example) in enumerate(examples):
+      if ex_index % 10000 == 0:
+        logger.info("Writing example %d" % (ex_index))
+      # if is_tf_dataset:
+      #   example = processor.get_example_from_tensor_dict(example)
+      #   example = processor.tfds_map(example)
+      if not (isinstance(tokenizer, XLMRobertaTokenizer) or isinstance(tokenizer, BertTokenizer)):
+        raise NotImplementedError('This tokenizer is not supported')
+
+      enc = tokenizer.encode(example.text_a, add_special_tokens=False)
+      toked_text += enc
+
+      if len(toked_text) <= max_length-2:
+        continue
+      long = True
+
+      while long:
+        # truncate
+        input_ids = toked_text[:max_length-2]
+        toked_text = toked_text[max_length-2:]
+        if len(toked_text) < max_length-2:
+          long = False
+
+        input_ids = [tokenizer.bos_token_id] + input_ids +[tokenizer.eos_token_id]
+
+        input_ids, mlm_labels = mask_tokens(input_ids, tokenizer, mlm_probability)
+
+        token_type_ids = [pad_token_segment_id] * len(input_ids)
+
+        # The mask has 1 for real tokens and 0 for padding tokens. Only real
+        # tokens are attended to.
+        attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+
+        # Zero-pad up to the sequence length.
+        padding_length = max_length - len(input_ids)
+        if pad_on_left:
+          input_ids = ([pad_token] * padding_length) + input_ids
+          attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
+          token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+          mlm_labels = ([-100] * padding_length) + mlm_labels
+        else:
+          input_ids = input_ids + ([pad_token] * padding_length)
+          attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+          token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+          mlm_labels = mlm_labels + ([-100] * padding_length)
+
+        assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+        assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
+          len(attention_mask), max_length
+        )
+        assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
+          len(token_type_ids), max_length
+        )
+        assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
+          len(mlm_labels), max_length
+        )
+
+        if len(features) < 5:
+          logger.info("*** Example ***")
+          logger.info("guid: %s" % (len(features)))
+          logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+          logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
+          logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
+          logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
+          logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
+
+        features.append(
+          InputFeatures(
+            input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, label=mlm_labels
+          )
+        )
+    return features
+  else:
+    for (ex_index, example) in enumerate(examples):
+      if ex_index % 10000 == 0:
+        logger.info("Writing example %d" % (ex_index))
+      # if is_tf_dataset:
+      #   example = processor.get_example_from_tensor_dict(example)
+      #   example = processor.tfds_map(example)
+
+      # truncate
+      if not (isinstance(tokenizer, XLMRobertaTokenizer) or isinstance(tokenizer, BertTokenizer)):
+        raise NotImplementedError('This tokenizer is not supported')
+      toked_text = tokenizer.encode_plus(example.text_a, add_special_tokens=True, max_length=max_length, truncation=True)
+
+      toked_text['input_ids'], mlm_labels = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
+
+      input_ids = toked_text["input_ids"]
+
+      try:
+        token_type_ids = toked_text["token_type_ids"]
+      except KeyError:
+        token_type_ids = [pad_token_segment_id] * len(input_ids)
+
+      # The mask has 1 for real tokens and 0 for padding tokens. Only real
+      # tokens are attended to.
+      attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+
+      # Zero-pad up to the sequence length.
+      padding_length = max_length - len(input_ids)
+      if pad_on_left:
+        input_ids = ([pad_token] * padding_length) + input_ids
+        attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
+        token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
+        mlm_labels = ([-100] * padding_length) + mlm_labels
+      else:
+        input_ids = input_ids + ([pad_token] * padding_length)
+        attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+        token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
+        mlm_labels = mlm_labels + ([-100] * padding_length)
+
+      assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+      assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
+        len(attention_mask), max_length
+      )
+      assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
+        len(token_type_ids), max_length
+      )
+      assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
+        len(mlm_labels), max_length
+      )
+
+      if ex_index < 5:
+        logger.info("*** Example ***")
+        logger.info("guid: %s" % (example.guid))
+        logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+        logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
+        logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
+        logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
+        logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
+
+      features.append(
+        InputFeatures(
+          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, label=mlm_labels
+        )
+      )
+    return features
+
+
+def convert_examples_to_ud_features(
+  examples,
+  tokenizer,
+  max_length=512,
+  pad_on_left=False,
+  mask_padding_with_zero=True,
+):
+
+  """
+  Loads a data file into a list of ``InputFeatures``
+  Args:
+    examples: List of ``UDExamples`` or ``tf.data.Dataset`` containing the examples.
+    tokenizer: Instance of a tokenizer that will tokenize the examples
+    max_length: Maximum example length
+    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
+    pad_token: Padding token
+    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
+    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
+      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
+      actual values)
+  Returns:
+    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
+    containing the task-specific features. If the input is a list of ``UDExamples``, will return
+    a list of task-specific ``InputFeatures`` which can be fed to the model.
+  """
+  features = []
   for (ex_index, example) in enumerate(examples):
     if ex_index % 10000 == 0:
       logger.info("Writing example %d" % (ex_index))
-    # if is_tf_dataset:
-    #   example = processor.get_example_from_tensor_dict(example)
-    #   example = processor.tfds_map(example)
-
-    # truncate
-    if not isinstance(tokenizer, XLMRobertaTokenizer):
-      raise NotImplementedError('This tokenizer is not supported')
-    toked_text = tokenizer.encode_plus(example.text_a, add_special_tokens=True, max_length=max_length, truncation=True)
-
-    toked_text['input_ids'], mlm_labels = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
-
-    input_ids = toked_text["input_ids"]
 
     try:
-      token_type_ids = toked_text["token_type_ids"]
-    except KeyError:
-      token_type_ids = [pad_token_segment_id] * len(input_ids)
+      tokens = list(map(tokenizer.tokenize, example.tokens))
+      orig_ids = [[tokenizer.cls_token_id]] + list(map(tokenizer.convert_tokens_to_ids, tokens)) + [[tokenizer.sep_token_id]]
+      ids = [[tokenizer.cls_token_id]] + list(map(tokenizer.convert_tokens_to_ids, tokens)) + [[tokenizer.sep_token_id]]
+      ids = [i for toks in ids for i in toks]
+      ud_arc = [0] + list(map(int, example.head)) + [0]
+      ud_rel = ['punct'] + example.deprel + ['punct']
+      ud_rel = list(map(lambda x: ud_head.UD_LABEL_DICT[x.split(':')[0]], ud_rel))
+      tok_lens = [1] + list(map(len, tokens)) + [1]
+      attention_mask = [1 if mask_padding_with_zero else 0] * len(ids)
+    except ValueError:
+      continue
 
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    attention_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+    # truncate
+    if sum(tok_lens) > max_length:
+      continue
 
-    # Zero-pad up to the sequence length.
-    padding_length = max_length - len(input_ids)
+    assert sum(tok_lens) == len(ids)
+
+    # padding
+    padding_length = max_length - len(ud_arc)
+    ids_pad_length = max_length - len(ids)
     if pad_on_left:
-      input_ids = ([pad_token] * padding_length) + input_ids
-      attention_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + attention_mask
-      token_type_ids = ([pad_token_segment_id] * padding_length) + token_type_ids
-      mlm_labels = ([-100] * padding_length) + mlm_labels
+      ids = ([tokenizer.pad_token_id] * ids_pad_length) + ids
+      ud_arc = ([-100] * padding_length) + ud_arc
+      ud_rel = ([-100] * padding_length) + ud_rel
+      tok_lens = ([0] * padding_length) + tok_lens
+      attention_mask = ([0 if mask_padding_with_zero else 1] * ids_pad_length) + attention_mask
     else:
-      input_ids = input_ids + ([pad_token] * padding_length)
-      attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-      token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
-      mlm_labels = mlm_labels + ([-100] * padding_length)
+      ids = ids + ([tokenizer.pad_token_id] * ids_pad_length)
+      ud_arc =  ud_arc + ([-100] * padding_length)
+      ud_rel = ud_rel + ([-100] * padding_length)
+      tok_lens = tok_lens + ([0] * padding_length)
+      attention_mask = attention_mask + ([0 if mask_padding_with_zero else 1] * ids_pad_length)
 
-    assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
+    assert len(ids) == max_length, "Error with ids length {} vs {}".format(len(ids), max_length)
     assert len(attention_mask) == max_length, "Error with input length {} vs {}".format(
       len(attention_mask), max_length
     )
-    assert len(token_type_ids) == max_length, "Error with input length {} vs {}".format(
-      len(token_type_ids), max_length
+    assert len(ud_arc) == max_length, "Error with ud_arc length {} vs {}".format(
+      len(ud_arc), max_length
     )
-    assert len(mlm_labels) == max_length, "Error with mlm labels length {} vs {}".format(
-      len(mlm_labels), max_length
+    assert len(ud_rel) == max_length, "Error with ud_rel length {} vs {}".format(
+      len(ud_rel), max_length
     )
-                                                      
+    assert len(tok_lens) == max_length, "Error with tok_lens labels length {} vs {}".format(
+      len(tok_lens), max_length
+    )
+
     if ex_index < 5:
       logger.info("*** Example ***")
       logger.info("guid: %s" % (example.guid))
-      logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
+      logger.info("ids: %s" % " ".join([str(x) for x in ids]))
       logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
-      logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
-      logger.info("mlm labels; %s" % " ".join([str(x) for x in mlm_labels]))
+      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(ids)))
+      logger.info("ud_arc: %s" % " ".join([str(x) for x in ud_arc]))
+      logger.info("ud_rel: %s" % " ".join([str(x) for x in ud_rel]))
+      logger.info("tok_lens; %s" % " ".join([str(x) for x in tok_lens]))
 
     features.append(
-      InputFeatures(
-        input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, label=mlm_labels
+      UDFeatures(
+        ids=ids, attention_mask=attention_mask, ud_arc=ud_arc, ud_rel=ud_rel, tok_lens=tok_lens
       )
     )
   return features
