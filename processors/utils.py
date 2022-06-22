@@ -368,7 +368,13 @@ def convert_examples_to_stance_features(
     text_index = len(tokenizer.encode('Question: What is the stance of', add_special_tokens=True)) - 1
     topic_index = len(tokenizer.encode('Question: What is the stance of with respect to', add_special_tokens=True)) - 1
     one_sided = False
-  if task == 'zh_stance':
+  elif task == 'stance_reserved':
+    pattern = f'<stance_tok_0><stance_tok_1><stance_tok_2><stance_tok_3><stance_tok_4>{tokenizer.mask_token}'
+    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+    text_index = len(tokenizer.encode('<reserved_tok0><reserved_tok1><reserved_tok2><reserved_tok3><reserved_tok4>', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode(f'<reserved_tok0><reserved_tok1><reserved_tok2><reserved_tok3><reserved_tok4>{tokenizer.mask_token}', add_special_tokens=True)) - 1
+    one_sided = False
+  elif task == 'zh_stance':
     pattern = f'以下的立场是{tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
     text_index = len(tokenizer.encode('以下', add_special_tokens=True)) - 1
@@ -397,7 +403,7 @@ def convert_examples_to_stance_features(
     topic_index = len(tokenizer.encode('Sentence 1 and sentence 2', add_special_tokens=True)) - 1
     one_sided = False
   else:
-    raise NotImplementedError('This task is not supported')
+    raise NotImplementedError(f'This task: {task} is not supported')
 
   label_map = {label: i for i, label in enumerate(label_list)}
 

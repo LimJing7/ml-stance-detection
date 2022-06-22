@@ -79,6 +79,20 @@ from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 from processors.tnlpcc import tNLPCCProcessor
 
+from processors.zh_stance.argmin import ArgMinZhStanceProcessor
+from processors.zh_stance.arc import ARCZhStanceProcessor
+from processors.zh_stance.fnc1 import FNC1ZhStanceProcessor
+from processors.zh_stance.iac1 import IAC1ZhStanceProcessor
+from processors.zh_stance.ibmcs import IBMCSZhStanceProcessor
+from processors.zh_stance.nlpcc import NLPCCZhStanceProcessor
+from processors.zh_stance.perspectrum import PerspectrumZhStanceProcessor
+from processors.zh_stance.semeval2016t6 import SemEval2016t6ZhStanceProcessor
+from processors.zh_stance.snopes import SnopesZhStanceProcessor
+from processors.zh_stance.twitter2015 import Twitter2015ZhStanceProcessor
+from processors.zh_stance.twitter2017 import Twitter2017ZhStanceProcessor
+from processors.zh_stance.vast import VASTZhStanceProcessor
+from processors.zh_stance.tnlpcc import tNLPCCZhStanceProcessor
+
 from processors.indonli import IndonliProcessor
 from processors.wikizh import WikiZhProcessor
 
@@ -116,6 +130,19 @@ PROCESSORS = {
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor,
              'tnlpcc': tNLPCCProcessor},
+  'zh_stance': {'arc': ARCZhStanceProcessor,
+                'argmin': ArgMinZhStanceProcessor,
+                'fnc1': FNC1ZhStanceProcessor,
+                'iac1': IAC1ZhStanceProcessor,
+                'ibmcs': IBMCSZhStanceProcessor,
+                'nlpcc': NLPCCZhStanceProcessor,
+                'perspectrum': PerspectrumZhStanceProcessor,
+                'semeval2016t6': SemEval2016t6ZhStanceProcessor,
+                'snopes': SnopesZhStanceProcessor,
+                'twitter2015': Twitter2015ZhStanceProcessor,
+                'twitter2017': Twitter2017ZhStanceProcessor,
+                'vast': VASTZhStanceProcessor,
+                'tnlpcc': tNLPCCZhStanceProcessor},
   'nli': {'indonli': IndonliProcessor},
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
@@ -134,7 +161,7 @@ PROCESSORS = {
 }
 
 PROCESSORS['stance_qa'] = PROCESSORS['stance']
-PROCESSORS['zh_stance'] = PROCESSORS['stance']
+PROCESSORS['stance_reserved'] = PROCESSORS['stance']
 PROCESSORS['no_topic_stance'] = PROCESSORS['stance']
 
 
@@ -146,12 +173,15 @@ def get_compute_preds(args, tokenizer, model, datasets):
     processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
     for label in labels:
-      if isinstance(model, XLMRobertaForMaskedLM):
-        lab_embed = torch.mean(model.roberta.embeddings(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
-      elif isinstance(model, BertForMaskedLM):
-        lab_embed = torch.mean(model.bert.embeddings(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
+      if args.use_embed_dotproduct:
+        lab_embed = torch.mean(model(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device), output_hidden_states=True)['hidden_states'][-1][0], axis=0)
       else:
-        raise NotImplementedError('Model is not supported')
+        if isinstance(model, XLMRobertaForMaskedLM):
+          lab_embed = torch.mean(model.roberta.embeddings(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
+        elif isinstance(model, BertForMaskedLM):
+          lab_embed = torch.mean(model.bert.embeddings(tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device))[0], axis=0)
+        else:
+          raise NotImplementedError('Model is not supported')
       embeded_tokens.append(lab_embed)
   LE = torch.stack(embeded_tokens).detach()
   def compute_preds(preds, shifts, ends):
@@ -1461,6 +1491,14 @@ def main():
     cache_dir=args.cache_dir if args.cache_dir else None,
   )
 
+  if args.task_name == 'stance_reserved':
+    if len(tokenizer.encode('<stance_tok_0>', add_special_tokens=False)) != 1:
+      tokenizer.add_tokens('<stance_tok_0>')
+      tokenizer.add_tokens('<stance_tok_1>')
+      tokenizer.add_tokens('<stance_tok_2>')
+      tokenizer.add_tokens('<stance_tok_3>')
+      tokenizer.add_tokens('<stance_tok_4>')
+
   lang2id = config.lang2id if args.model_type == "xlm" else None
   logger.info("lang2id = {}".format(lang2id))
 
@@ -1496,6 +1534,9 @@ def main():
         config=config,
         cache_dir=args.cache_dir if args.cache_dir else None,
       )
+    if args.task_name == 'stance_reserved':
+      if model.get_input_embeddings().num_embeddings != len(tokenizer):
+        model.resize_token_embeddings(len(tokenizer))
     model.to(args.device)
     train_datasets = []
     shift = 0
