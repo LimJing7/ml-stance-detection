@@ -56,16 +56,24 @@ from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
+from processors.ruw import RuwProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.trans_nli_for_simcse import TransNLIforSIMCSEProcessor
 from processors.ud import UDProcessor
 from processors.webtext2019 import Webtext2019Processor
 
-from processors.utils import convert_examples_to_stance_features, convert_examples_to_parallel_features, convert_examples_to_mlm_features, convert_examples_to_ud_features
+from processors.utils import (
+  convert_examples_to_stance_features,
+  convert_examples_to_parallel_features,
+  convert_examples_to_mlm_features,
+  convert_examples_to_ud_features,
+  convert_examples_to_ld_features
+)
 
 from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
+from processors.asap import ASAPProcessor
 from processors.fnc1 import FNC1Processor
 from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
@@ -78,6 +86,7 @@ from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 from processors.tnlpcc import tNLPCCProcessor
+from processors.xnli_ld import XNLILDProcessor
 
 from processors.zh_stance.argmin import ArgMinZhStanceProcessor
 from processors.zh_stance.arc import ARCZhStanceProcessor
@@ -118,6 +127,7 @@ PROCESSORS = {
   'stance': {'ans': ANSProcessor,
              'arc': ARCProcessor,
              'argmin': ArgMinProcessor,
+             'asap': ASAPProcessor,
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,
              'ibmcs': IBMCSProcessor,
@@ -146,13 +156,15 @@ PROCESSORS = {
   'nli': {'indonli': IndonliProcessor},
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
+  'lang_discrim': {'xnli': XNLILDProcessor},
+  'mlm': {'ruw': RuwProcessor,
+          'webtext2019': Webtext2019Processor,
+          'wikizh': WikiZhProcessor},
   'pawsx': {'pawsxen': PAWSXEnProcessor,
             'pawsxzh': PAWSXZhProcessor},
   'parallel': {'parallel_nli': ParallelNLIProcessor,
                'nli_for_simcse': NLIforSIMCSEProcessor,
                'trans_nli_for_simcse': TransNLIforSIMCSEProcessor},
-  'mlm': {'webtext2019': Webtext2019Processor,
-          'wikizh': WikiZhProcessor},
   'ud': {'en_ewt': UDProcessor,
          'zh_gsdsimp': UDProcessor,
          'zh_pud': UDProcessor,
@@ -350,7 +362,7 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model, tokenizer, lang2id=None):
+def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id=None):
   """Train the model."""
   if args.local_rank in [-1, 0]:
     tb_writer = SummaryWriter(f'runs/{args.output_dir.split("/")[-1]}')
@@ -383,6 +395,14 @@ def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model
       ud_dataloaders.append(ud_dataloader)
       ud_iterator = iter(ud_dataloader)
       ud_iterators.append(ud_iterator)
+
+  if args.lang_discrim:
+    lang_discrim = torch.nn.Linear(model.config.hidden_size, 1, device=args.device)
+    discrim_loss_fn = torch.nn.BCEWithLogitsLoss()
+
+    ld_sampler = RandomSampler(ld_dataset) if args.local_rank == -1 else DistributedSampler(ld_dataset)
+    ld_dataloader = DataLoader(ld_dataset, sampler=ld_sampler, batch_size=args.train_batch_size)
+    ld_iterator = iter(ld_dataloader)
 
   if args.max_steps > 0:
     t_total = args.max_steps
@@ -421,6 +441,9 @@ def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model
       scheduler = get_linear_schedule_with_warmup(
         optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
       )
+    if args.lang_discrim:
+      discrim_parameters = lang_discrim.parameters()
+      discrim_optimizer = AdamW(discrim_parameters, lr=args.learning_rate)
   else:
     raise NotImplementedError
 
@@ -627,6 +650,22 @@ def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model
         ud_loss = torch.mean(torch.tensor(ud_losses))
         loss = args.alpha * loss + (1-args.alpha) * ud_loss
 
+      if args.lang_discrim:
+        try:
+          ld_batch = next(ld_iterator)
+        except StopIteration:
+          ld_iterator = iter(ld_dataloader)
+          ld_batch = next(ld_iterator)
+        ld_inputs = {"input_ids": ld_batch[0].to(args.device), "attention_mask": ld_batch[1].to(args.device)}
+
+        outputs = model(**ld_inputs, output_hidden_states=True)
+        ld_outputs = lang_discrim(torch.mean(outputs['hidden_states'][-1],axis=1))
+
+        ld_loss = discrim_loss_fn(ld_outputs.squeeze(), ld_batch[3].float().to(args.device))
+        gen_loss = discrim_loss_fn(ld_outputs.squeeze(), (1-ld_batch[3]).float().to(args.device))
+        loss = args.alpha * loss + (1-args.alpha) * gen_loss
+
+
       if args.n_gpu > 1:
         loss = loss.mean()  # mean() to average on multi-gpu parallel training
       if args.gradient_accumulation_steps > 1:
@@ -644,6 +683,9 @@ def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model
           torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
         else:
           torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+
+        if args.lang_discrim:
+          discrim_optimizer.step()
 
         optimizer.step()
         scheduler.step()  # Update learning rate schedule
@@ -665,6 +707,9 @@ def train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model
               tb_writer.add_scalar('simcse_loss', simcse_loss, global_step)
             if args.ud:
               tb_writer.add_scalar('ud_loss', ud_loss, global_step)
+            if args.lang_discrim:
+              tb_writer.add_scalar('lang_discrim_loss', ld_loss, global_step)
+              tb_writer.add_scalar('generator_loss', gen_loss, global_step)
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
@@ -913,17 +958,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
 
   cached_features_file = os.path.join(
     args.data_dir,
-    "cached_{}_{}_{}_{}_{}_{}_{}{}{}".format(
-      dataset,
-      split,
-      cache_model_name_or_path,
-      str(args.max_seq_length),
-      str(task),
-      str(language),
-      mlm,
-      lc,
-      da,
-    ),
+    f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_{task}_{args.variant}_{language}_{mlm}{lc}{da}",
   )
   if os.path.exists(cached_features_file) and not args.overwrite_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
@@ -951,6 +986,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       examples,
       tokenizer,
       task,
+      variant=args.variant,
       label_list=label_list,
       max_length=args.max_seq_length,
       output_mode=output_mode,
@@ -1212,6 +1248,70 @@ def load_and_cache_ud_examples(args, dataset, tokenizer, split='train', evaluate
   return dataset
 
 
+def load_and_cache_ld_examples(args, dataset, tokenizer, split='train', evaluate=False):
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank not in [-1, 0] and not evaluate:
+    torch.distributed.barrier()
+
+  processor = PROCESSORS['lang_discrim'][dataset]()
+  # Load data features from cache or dataset file
+  lc = '_lc' if args.do_lower_case else ''
+
+  cache_model_name_or_path = list(filter(lambda x: x and 'checkpoint' not in x, args.model_name_or_path.split("/")))[-1]
+
+  cached_features_file = os.path.join(
+    args.data_dir,
+    f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_lang-discrim{lc}",
+  )
+  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+    logger.info("Loading features from cached file %s", cached_features_file)
+    features = torch.load(cached_features_file)
+  else:
+    logger.info("Creating features from dataset file at %s", args.data_dir)
+    label_list = processor.get_labels()
+    if split == 'train':
+      examples = processor.get_train_examples(args.data_dir)
+    elif split == 'translate-train':
+      examples = processor.get_translate_train_examples(args.data_dir)
+    elif split == 'translate-test':
+      examples = processor.get_translate_test_examples(args.data_dir)
+    elif split == 'dev':
+      examples = processor.get_dev_examples(args.data_dir)
+    elif split == 'pseudo_test':
+      examples = processor.get_pseudo_test_examples(args.data_dir)
+    else:
+      examples = processor.get_test_examples(args.data_dir)
+
+    features = convert_examples_to_ld_features(
+      examples,
+      tokenizer,
+      max_length=args.max_seq_length,
+      pad_on_left=False,
+      pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
+      pad_token_segment_id=0,
+    )
+    if args.local_rank in [-1, 0]:
+      logger.info("Saving features into cached file %s", cached_features_file)
+      torch.save(features, cached_features_file)
+
+  # Make sure only the first process in distributed training process the
+  # dataset, and the others will use the cache
+  if args.local_rank == 0 and not evaluate:
+    torch.distributed.barrier()
+
+  # Convert to Tensors and build dataset
+  all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+  all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+  all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+  all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+  if args.model_type == 'xlm':
+    raise NotImplementedError('xlm model not supported')
+  else:
+    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
+  return dataset
+
+
 def main():
   parser = argparse.ArgumentParser()
 
@@ -1264,6 +1364,12 @@ def main():
     type=str,
     required=True,
     help="The task name",
+  )
+  parser.add_argument(
+    "--variant",
+    default=0,
+    type=int,
+    help="Task variant"
   )
 
   # Other parameters
@@ -1328,6 +1434,8 @@ def main():
   parser.add_argument('--ud', action='store_true', help='use universal dependecies parsing as an auxillary task')
   parser.add_argument('--ud_datasets', default=['en_ewt'], nargs="*", type=str, help='datasets for UD parsing')
   parser.add_argument('--use_embed_dotproduct', action='store_true', help='use the whole embedding model to compute dot product')
+  parser.add_argument('--lang_discrim', action='store_true', help='Whether to add a language discriminator module')
+  parser.add_argument('--ld_dataset', type=str, help='dataset for lang discriminator')
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1558,14 +1666,18 @@ def main():
         weighted_train_datasets.append(new_train_dataset)
       train_datasets = weighted_train_datasets
     train_dataset = ConcatDataset(train_datasets)
-    if args.parallel_dataset is not None:
-      parallel_dataset = load_and_cache_parallel_examples(args, args.parallel_dataset, tokenizer)
+    if args.ld_dataset is not None:
+      ld_dataset = load_and_cache_ld_examples(args, args.ld_dataset, tokenizer)
     else:
-      parallel_dataset = None
+      ld_dataset = None
     if args.mlm_dataset is not None:
       mlm_dataset = load_and_cache_mlm_examples(args, args.mlm_dataset, tokenizer)
     else:
       mlm_dataset = None
+    if args.parallel_dataset is not None:
+      parallel_dataset = load_and_cache_parallel_examples(args, args.parallel_dataset, tokenizer)
+    else:
+      parallel_dataset = None
     if args.ud:
       ud_datasets = []
       for ud_ds in args.ud_datasets:
@@ -1576,7 +1688,7 @@ def main():
         ud_datasets.append(ud_dataset)
     else:
       ud_datasets = None
-    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, parallel_dataset, mlm_dataset, ud_datasets, model, tokenizer, lang2id)
+    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
 

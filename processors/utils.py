@@ -2,6 +2,8 @@ import copy
 import csv
 import json
 import logging
+from readline import set_completion_display_matches_hook
+from datasets import first_non_null_value
 import torch
 import random
 from transformers import BertTokenizer, XLMTokenizer, XLMRobertaTokenizer
@@ -321,6 +323,7 @@ def convert_examples_to_stance_features(
   examples,
   tokenizer,
   task,
+  variant=0,
   max_length=512,
   label_list=None,
   output_mode=None,
@@ -339,6 +342,7 @@ def convert_examples_to_stance_features(
     tokenizer: Instance of a tokenizer that will tokenize the examples
     max_length: Maximum example length
     task: GLUE task
+    variant: which variant of the task
     label_list: List of labels. Can be obtained from the processor using the ``processor.get_labels()`` method
     output_mode: String indicating the output mode. Either ``regression`` or ``classification``
     pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
@@ -357,29 +361,71 @@ def convert_examples_to_stance_features(
   #   is_tf_dataset = True
 
   if task == 'stance':
-    pattern = f'The stance of the following is {tokenizer.mask_token} the '
-    pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
-    text_index = len(tokenizer.encode('The stance of the following', add_special_tokens=True)) - 1
-    topic_index = len(tokenizer.encode(f'The stance of the following is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
-    one_sided = False
+    if variant == 0:
+      pattern = f'The stance of the following is {tokenizer.mask_token} the '
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode('The stance of the following', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'The stance of the following is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 1:
+      pattern = f'The opinion of the following text is {tokenizer.mask_token} the '
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode('The opinion of the following text', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'The opinion of the following text is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 2:
+      pattern = f'The text is {tokenizer.mask_token} the '
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode('The text ', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'The text is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 3:
+      pattern = f'Stance of is {tokenizer.mask_token} the '
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode('Stance of', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Stance of is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 4:
+      pattern = f'is {tokenizer.mask_token} the '
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode('', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'is {tokenizer.mask_token} the', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 5:
+      pattern = f'Towards , is {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'Towards ,', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Towards ', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = False
+    else:
+      raise IndexError('stance task does not have this variant')
   elif task == 'stance_qa':
     pattern = f'Question: What is the stance of with respect to ? Answer: {tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
     text_index = len(tokenizer.encode('Question: What is the stance of', add_special_tokens=True)) - 1
     topic_index = len(tokenizer.encode('Question: What is the stance of with respect to', add_special_tokens=True)) - 1
     one_sided = False
+    text_first = True
   elif task == 'stance_reserved':
     pattern = f'<stance_tok_0><stance_tok_1><stance_tok_2><stance_tok_3><stance_tok_4>{tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
-    text_index = len(tokenizer.encode('<reserved_tok0><reserved_tok1><reserved_tok2><reserved_tok3><reserved_tok4>', add_special_tokens=True)) - 1
-    topic_index = len(tokenizer.encode(f'<reserved_tok0><reserved_tok1><reserved_tok2><reserved_tok3><reserved_tok4>{tokenizer.mask_token}', add_special_tokens=True)) - 1
+    text_index = len(tokenizer.encode('<stance_tok_0><stance_tok_1><stance_tok_2><stance_tok_3><stance_tok_4>', add_special_tokens=True)) - 1
+    topic_index = len(tokenizer.encode(f'<stance_tok_0><stance_tok_1><stance_tok_2><stance_tok_3><stance_tok_4>{tokenizer.mask_token}', add_special_tokens=True)) - 1
     one_sided = False
+    text_first = True
   elif task == 'zh_stance':
     pattern = f'以下的立场是{tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
     text_index = len(tokenizer.encode('以下', add_special_tokens=True)) - 1
     topic_index = len(tokenizer.encode(f'以下的立场是{tokenizer.mask_token}', add_special_tokens=True)) - 1
     one_sided = False
+    text_first = True
   elif task == 'no_topic_stance':
     pattern = f'The stance of the following is {tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
@@ -391,6 +437,7 @@ def convert_examples_to_stance_features(
     text_index = len(tokenizer.encode('This premise: ', add_special_tokens=True)) - 1
     topic_index = len(tokenizer.encode(f'This premise: {tokenizer.mask_token} this hypothesis: ', add_special_tokens=True)) - 1
     one_sided = False
+    text_first = True
   elif task == 'classification':
     pattern = f'This comment is {tokenizer.mask_token}'
     pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
@@ -402,6 +449,7 @@ def convert_examples_to_stance_features(
     text_index = len(tokenizer.encode('Sentence 1', add_special_tokens=True)) - 1
     topic_index = len(tokenizer.encode('Sentence 1 and sentence 2', add_special_tokens=True)) - 1
     one_sided = False
+    text_first = True
   else:
     raise NotImplementedError(f'This task: {task} is not supported')
 
@@ -466,12 +514,38 @@ def convert_examples_to_stance_features(
         toked_text['input_ids'], text_label = mask_tokens(toked_text['input_ids'], tokenizer, mlm_probability)
         toked_topic['input_ids'], topic_label = mask_tokens(toked_topic['input_ids'], tokenizer, mlm_probability)
 
-        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:topic_index] + toked_topic['input_ids'] + inputs['input_ids'][topic_index:]
-        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:topic_index] + toked_topic['attention_mask'] + inputs['attention_mask'][topic_index:]
-        mlm_labels = mlm_labels[:text_index] + text_label + mlm_labels[text_index:topic_index] + topic_label + mlm_labels[topic_index:]
+        if text_first:
+          toked_first = toked_text
+          toked_second = toked_topic
+          first_index = text_index
+          second_index = topic_index
+          first_label = text_label
+          second_label = topic_label
+        else:
+          toked_first = toked_topic
+          toked_second = toked_text
+          first_index = topic_index
+          second_index = text_index
+          first_label = topic_label
+          second_label = text_label
+
+        inputs['input_ids'] = inputs['input_ids'][:first_index] + toked_first['input_ids'] + inputs['input_ids'][first_index:second_index] + toked_second['input_ids'] + inputs['input_ids'][second_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:first_index] + toked_first['attention_mask'] + inputs['attention_mask'][first_index:second_index] + toked_second['attention_mask'] + inputs['attention_mask'][second_index:]
+        mlm_labels = mlm_labels[:first_index] + first_label + mlm_labels[first_index:second_index] + second_label + mlm_labels[second_index:]
       else:
-        inputs['input_ids'] = inputs['input_ids'][:text_index] + toked_text['input_ids'] + inputs['input_ids'][text_index:topic_index] + toked_topic['input_ids'] + inputs['input_ids'][topic_index:]
-        inputs['attention_mask'] = inputs['attention_mask'][:text_index] + toked_text['attention_mask'] + inputs['attention_mask'][text_index:topic_index] + toked_topic['attention_mask'] + inputs['attention_mask'][topic_index:]
+        if text_first:
+          toked_first = toked_text
+          toked_second = toked_topic
+          first_index = text_index
+          second_index = topic_index
+        else:
+          toked_first = toked_topic
+          toked_second = toked_text
+          first_index = topic_index
+          second_index = text_index
+
+        inputs['input_ids'] = inputs['input_ids'][:first_index] + toked_first['input_ids'] + inputs['input_ids'][first_index:second_index] + toked_second['input_ids'] + inputs['input_ids'][second_index:]
+        inputs['attention_mask'] = inputs['attention_mask'][:first_index] + toked_first['attention_mask'] + inputs['attention_mask'][first_index:second_index] + toked_second['attention_mask'] + inputs['attention_mask'][second_index:]
 
     input_ids = inputs["input_ids"]
     try:
@@ -846,7 +920,6 @@ def convert_examples_to_ud_features(
   pad_on_left=False,
   mask_padding_with_zero=True,
 ):
-
   """
   Loads a data file into a list of ``InputFeatures``
   Args:
@@ -933,4 +1006,60 @@ def convert_examples_to_ud_features(
         ids=ids, attention_mask=attention_mask, ud_arc=ud_arc, ud_rel=ud_rel, tok_lens=tok_lens
       )
     )
+  return features
+
+
+def convert_examples_to_ld_features(
+  examples,
+  tokenizer,
+  max_length=512,
+  pad_on_left=False,
+  pad_token=0,
+  pad_token_segment_id=0,
+  mask_padding_with_zero=True,
+):
+  """
+  Loads a data file into a list of ``InputFeatures``
+  Args:
+    examples: List of ``InputExamples`` or ``tf.data.Dataset`` containing the examples.
+    tokenizer: Instance of a tokenizer that will tokenize the examples
+    max_length: Maximum example length
+    pad_on_left: If set to ``True``, the examples will be padded on the left rather than on the right (default)
+    pad_token: Padding token
+    pad_token_segment_id: The segment ID for the padding token (It is usually 0, but can vary such as for XLNet where it is 4)
+    mask_padding_with_zero: If set to ``True``, the attention mask will be filled by ``1`` for actual values
+      and by ``0`` for padded values. If set to ``False``, inverts it (``1`` for padded values, ``0`` for
+      actual values)
+  Returns:
+    If the ``examples`` input is a ``tf.data.Dataset``, will return a ``tf.data.Dataset``
+    containing the task-specific features. If the input is a list of ``InputExamples``, will return
+    a list of task-specific ``InputFeatures`` which can be fed to the model.
+  """
+  features = []
+  for (ex_index, example) in enumerate(examples):
+    if ex_index % 10000 == 0:
+      logger.info("Writing example %d" % (ex_index))
+
+    working_len = max_length
+    if not (isinstance(tokenizer, XLMRobertaTokenizer) or isinstance(tokenizer, BertTokenizer)):
+      raise NotImplementedError('This tokenizer is not supported')
+
+    input_ids, attention_mask, token_type_ids = process_one_sentence(example.text_a, tokenizer, max_length, pad_on_left, pad_token, pad_token_segment_id, mask_padding_with_zero)
+    label = example.label
+
+    if ex_index < 5:
+      logger.info("*** Example ***")
+      logger.info("guid: %s" % (example.guid))
+      logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+      logger.info("sentence: %s" % " ".join(tokenizer.convert_ids_to_tokens(input_ids)))
+      logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
+      logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
+      logger.info("label: %s" % (label))
+
+    features.append(
+      InputFeatures(
+        input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, label=label
+      )
+    )
+
   return features

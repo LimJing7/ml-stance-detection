@@ -194,14 +194,13 @@ Using 2 negative
 |         | bert-base-chinese | hfl/chinese-roberta-wwm-ext |
 |---------|:-----------------:|:---------------------------:|
 | nlpcc   |       0.494       |            0.526            |
-<<<<<<< Updated upstream
-| t-nlpcc |
-=======
 | t-nlpcc |       0.312       |            0.256            |
 
 ### with full nlpcc dataset
-| nlpcc   | 0.615 |
-| t-nlpcc | 0.569 |
+|         | + nlpcc | + t-nlpcc |
+|---------|:-------:|:---------:|
+| nlpcc   |  0.615  |   0.609   |
+| t-nlpcc |  0.569  |   0.718   |
 
 ### m-bert comparison
 | no mlm, 2 neg, rs-rp (mbert) |
@@ -217,12 +216,22 @@ Using 2 negative
 | nlpcc   |     0.477     |          0.451           |
 | t-nlpcc |     0.563     |          0.577           |
 
-### Stance-qa
-| nlpcc   | 0.444 |
-| t-nlpcc | 0.561 |
 
->>>>>>> Stashed changes
+### Different prompts
+|         | stance-qa | zh-stance | stance-reserved |   v1  |   v2  |   v3  |   v4  |   v5  |
+|---------|:---------:|:---------:|:---------------:|:-----:|:-----:|:-----:|:-----:|:-----:|
+| nlpcc   |   0.444   |   0.460   |      0.408      | 0.456 | 0.480 | 0.506 | 0.467 | 0.442 |
+| t-nlpcc |   0.561   |   0.571   |      0.535      | 0.562 | 0.571 | 0.596 | 0.579 | 0.561 |
 
+
+### full dot-product
+| nlpcc   | 0.225 |
+| t-nlpcc | 0.333 |
+
+
+### add asap
+| nlpcc   | 0.393 |
+| t-nlpcc | 0.474 |
 
 - Add more datasets
 - End-task aware training
