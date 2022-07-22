@@ -56,6 +56,7 @@ from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
 from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
+from processors.reco import ReCOProcessor
 from processors.ruw import RuwProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.trans_nli_for_simcse import TransNLIforSIMCSEProcessor
@@ -74,6 +75,7 @@ from processors.ans import ANSProcessor
 from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
 from processors.asap import ASAPProcessor
+from processors.combnlpcc import CombNLPCCProcessor
 from processors.fnc1 import FNC1Processor
 from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
@@ -128,6 +130,7 @@ PROCESSORS = {
              'arc': ARCProcessor,
              'argmin': ArgMinProcessor,
              'asap': ASAPProcessor,
+             'comb_nlpcc': CombNLPCCProcessor,
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,
              'ibmcs': IBMCSProcessor,
@@ -157,7 +160,8 @@ PROCESSORS = {
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
   'lang_discrim': {'xnli': XNLILDProcessor},
-  'mlm': {'ruw': RuwProcessor,
+  'mlm': {'reco': ReCOProcessor,
+          'ruw': RuwProcessor,
           'webtext2019': Webtext2019Processor,
           'wikizh': WikiZhProcessor},
   'pawsx': {'pawsxen': PAWSXEnProcessor,
@@ -918,10 +922,15 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
 
       cm = sklearn.metrics.confusion_matrix(out_label_ids, preds, list(range(len(labels_list))))
+      # add totals
+      cm = np.concatenate([cm, cm.sum(axis=1).reshape(-1,1)], axis=1)
+      cm = np.concatenate([cm, cm.sum(axis=0).reshape(1,-1)], axis=0)
+
       with open(os.path.splitext(output_file)[0]+'_cm.txt', 'w') as f:
-        f.write(' \t' + '\t'.join([f'pred_{i}' for i in labels_list]) + '\n')
+        f.write(' \t' + '\t'.join([f'pred_{i}' for i in labels_list]) + '\ttotals\n')
         for i, label in enumerate(labels_list):
           f.write(f'true_{label}\t' + '\t'.join([str(v) for v in cm[i]]) + '\n')
+        f.write(f'totals\t' + '\t'.join([str(v) for v in cm[-1]]) + '\n')
     logger.info("***** Eval results {} {} *****".format(prefix, dataset))
     for key in sorted(result.keys()):
       logger.info("  %s = %s", key, str(result[key]))
