@@ -45,34 +45,42 @@ class ASAPProcessor(DataProcessor):
       examples = []
       lines = pd.read_csv(os.path.join(data_dir, f"asap-{split}.csv"), header=0)
 
-      topics_map = {
-        'Location#Transportation': 'transportation',
-        'Location#Downtown': 'downtown',
-        'Location#Easy_to_find': 'easy to find',
-        'Service#Queue': 'queue',
-        'Service#Hospitality': 'hospitality',
-        'Service#Parking': 'parking',
-        'Service#Timely': 'timely',
-        'Price#Level': 'price level',
-        'Price#Cost_effective': 'cost effectiveness',
-        'Price#Discount': 'discount',
-        'Ambience#Decoration': 'decoration',
-        'Ambience#Noise': 'noise',
-        'Ambience#Space': 'space',
-        'Ambience#Sanitary': 'sanitary',
-        'Food#Portion': 'food portion',
-        'Food#Taste': 'food taste',
-        'Food#Appearance': 'food appearance',
-        'Food#Recommend': 'food recommend'
+      topics_map = {'loc': {'Location#Transportation': 'transportation',
+                            'Location#Downtown': 'downtown',
+                            'Location#Easy_to_find': 'easy to find'},
+                    'svc': {'Service#Queue': 'queue',
+                            'Service#Hospitality': 'hospitality',
+                            'Service#Parking': 'parking',
+                            'Service#Timely': 'timely'},
+                    'pri': {'Price#Level': 'price level',
+                            'Price#Cost_effective': 'cost effectiveness',
+                            'Price#Discount': 'discount'},
+                    'amb': {'Ambience#Decoration': 'decoration',
+                            'Ambience#Noise': 'noise',
+                            'Ambience#Space': 'space',
+                            'Ambience#Sanitary': 'sanitary'},
+                    'foo': {'Food#Portion': 'food portion',
+                            'Food#Taste': 'food taste',
+                            'Food#Appearance': 'food appearance',
+                            'Food#Recommend': 'food recommend'}
       }
 
       for (i, line) in enumerate(lines.iterrows()):
-        for j, (header, topic) in enumerate(topics_map.items()):
-            guid = "%s-%s" % (split, i*18+j)
-            text = line[1]['review']
-            label = ASAPProcessor.label_map[line[1][header]]
-            assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
-            examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+        j = 0
+        for topic_grp in topics_map.values():
+            keep = False
+            example_grp = []
+            for header, topic in topic_grp.items():
+                guid = "%s-%s" % (split, i*18+j)
+                text = line[1]['review']
+                label = ASAPProcessor.label_map[line[1][header]]
+                if label != 'not mentioned':
+                    keep = True
+                assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
+                example_grp.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+                j += 1
+            if keep:
+                examples.extend(example_grp)
       return examples
 
     def get_train_examples(self, data_dir):
