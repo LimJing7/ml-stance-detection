@@ -14,9 +14,9 @@ def perturb(examples, n_perturbations, neighbors_file):
     """Perturb the examples for robustness training
 
     Args:
-            examples (list[StanceExamples]): List of examples to perturb
-            n_perturbations (int): Number of perturbations to generate per example
-            neighbors_file (str): File containing synonyms
+        examples (list[StanceExamples]): List of examples to perturb
+        n_perturbations (int): Number of perturbations to generate per example
+        neighbors_file (str): File containing synonyms
     """
 
     p_examples = []
