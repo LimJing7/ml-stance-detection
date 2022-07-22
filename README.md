@@ -142,16 +142,18 @@ Using 2 negative
 
 
 ### Compare different robust training schemes
-|             | RS-RP (0.01) | RS-RP (0.1) | RS-DA |   |
-|-------------|:------------:|:-----------:|:-----:|:-:|
-| nlpcc       |   **0.50**   |     0.48    |  0.48 |   |
-| trans_nlpcc |     0.43     |     0.41    |  0.43 |   |
+|             | RS-RP (0.01) | RS-RP (0.1) | RS-DA |
+|-------------|:------------:|:-----------:|:-----:|
+| nlpcc       |    0.485     |    0.466    | 0.477 |
+| trans_nlpcc |     0.43     |     0.41    |  0.43 |
+| t-nlpcc     |    0.572     |    0.568    | 0.569 |
 
 ### Different Masking Rate for MLM
-|             | 0.15 |  0.3 |  0.4 |
-|-------------|:----:|:----:|:----:|
-| nlpcc       | 0.43 | 0.45 | 0.46 |
-| trans_nlpcc | 0.41 | 0.36 | 0.37 |
+|             |  0.15 |  0.3  |  0.4  |
+|-------------|:-----:|:-----:|:-----:|
+| nlpcc       | 0.429 | 0.455 | 0.460 |
+| trans_nlpcc | 0.415 | 0.357 | 0.376 |
+| t-nlpcc     | 0.548 | 0.558 | 0.555 |
 
 ### Tartan
 |                | arc argmin fnc1 twitter2015 twitter2017 <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 5 epochs + rs_rp | argmin semeval2016t6 twitter2015 twitter2017 vast <br> 20 epochs + rs_rp |
@@ -185,10 +187,10 @@ Using 2 negative
 | t-nlpcc |    0.557     |      0.565       |          0.578           |                0.563                |
 
 ### With ZH MLM
-|         | webtext2019 | wikipedia-zh |
-|---------|:-----------:|:------------:|
-| nlpcc   |    0.473    |    0.482     |
-| t-nlpcc |    0.534    |    0.523     |
+|         | webtext2019 | wikipedia-zh |  ruw  |  reco |
+|---------|:-----------:|:------------:|:-----:|:-----:|
+| nlpcc   |    0.473    |    0.482     | 0.452 | 0.494 |
+| t-nlpcc |    0.534    |    0.523     | 0.531 | 0.562 |
 
 ### Chinese language models
 |         | bert-base-chinese | hfl/chinese-roberta-wwm-ext |
@@ -218,10 +220,10 @@ Using 2 negative
 
 
 ### Different prompts
-|         | stance-qa | zh-stance | stance-reserved |   v1  |   v2  |   v3  |   v4  |   v5  |
-|---------|:---------:|:---------:|:---------------:|:-----:|:-----:|:-----:|:-----:|:-----:|
-| nlpcc   |   0.444   |   0.460   |      0.408      | 0.456 | 0.480 | 0.506 | 0.467 | 0.442 |
-| t-nlpcc |   0.561   |   0.571   |      0.535      | 0.562 | 0.571 | 0.596 | 0.579 | 0.561 |
+|         | stance-qa | zh-stance | stance-reserved |   v1  |   v2  |   v3  |   v4  |   v5  |   v6  |   v7  |   v8  |   v9  |  v10  |  v11  |
+|---------|:---------:|:---------:|:---------------:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|
+| nlpcc   |   0.444   |   0.460   |      0.408      | 0.456 | 0.480 | 0.506 | 0.467 | 0.442 | 0.480 | 0.468 | 0.446 | 0.477 | 0.448 | 0.413 |
+| t-nlpcc |   0.561   |   0.571   |      0.535      | 0.562 | 0.571 | 0.596 | 0.579 | 0.561 | 0.575 | 0.589 | 0.569 | 0.580 | 0.543 | 0.568 |
 
 
 ### full dot-product
@@ -232,6 +234,13 @@ Using 2 negative
 ### add asap
 | nlpcc   | 0.393 |
 | t-nlpcc | 0.474 |
+
+### lang discriminator
+|         |  xnli |
+|---------|:-----:|
+| nlpcc   | 0.465 |
+| t-nlpcc | 0.559 |
+
 
 - Add more datasets
 - End-task aware training
