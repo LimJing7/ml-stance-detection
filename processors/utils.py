@@ -403,6 +403,48 @@ def convert_examples_to_stance_features(
       topic_index = len(tokenizer.encode(f'Towards ', add_special_tokens=True)) - 1
       one_sided = False
       text_first = False
+    elif variant == 6:
+      pattern = f'I guess that is {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'I guess that ', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'I guess that is {tokenizer.mask_token}', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 7:
+      pattern = f'Predict that {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'Predict that', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Predict that {tokenizer.mask_token}', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 8:
+      pattern = f'Regarding , the text: is {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'Regarding , the text:', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Regarding', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = False
+    elif variant == 9:
+      pattern = f'We believe that is {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'We believe that', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'We believe that is {tokenizer.mask_token}', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
+    elif variant == 10:
+      pattern = f'Topic: Text: Stance: {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'Topic: Text:', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Topic:', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = False
+    elif variant == 11:
+      pattern = f'Text: Topic: Stance: {tokenizer.mask_token}'
+      pattern_length = len(tokenizer.encode(pattern, add_special_tokens=True))
+      text_index = len(tokenizer.encode(f'Text:', add_special_tokens=True)) - 1
+      topic_index = len(tokenizer.encode(f'Text: Topic:', add_special_tokens=True)) - 1
+      one_sided = False
+      text_first = True
     else:
       raise IndexError('stance task does not have this variant')
   elif task == 'stance_qa':
