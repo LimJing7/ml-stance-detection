@@ -88,6 +88,8 @@ from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 from processors.tnlpcc import tNLPCCProcessor
+
+from processors.mldoc import MLDocProcessor
 from processors.xnli_ld import XNLILDProcessor
 
 from processors.zh_stance.argmin import ArgMinZhStanceProcessor
@@ -159,7 +161,8 @@ PROCESSORS = {
   'nli': {'indonli': IndonliProcessor},
   'classification': {'amazonzh': AmazonZhProcessor,
                      'idclickbait': IdClickbaitProcessor},
-  'lang_discrim': {'xnli': XNLILDProcessor},
+  'lang_discrim': {'mldoc': MLDocProcessor,
+                   'xnli': XNLILDProcessor},
   'mlm': {'reco': ReCOProcessor,
           'ruw': RuwProcessor,
           'webtext2019': Webtext2019Processor,
