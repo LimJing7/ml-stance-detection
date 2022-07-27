@@ -36,6 +36,7 @@ headers = [
     'weight_decay',
     'adam_epsilon',
     'max_grad_norm',
+    'random_seed',
     'num_train_epochs',
     'nlpcc_f1',
     'comb_nlpcc_f1',
@@ -79,6 +80,7 @@ def get_result(folder, dataset, df, hashes):
         'weight_decay': train_args.weight_decay,
         'adam_epsilon': train_args.adam_epsilon,
         'max_grad_norm': train_args.max_grad_norm,
+        'random_seed': train_args.seed,
         'num_train_epochs': train_args.num_train_epochs,
         'dir': folder,
     }
@@ -134,9 +136,9 @@ def main():
         data_df = pickle.load(open(args.output_file, 'rb'))
     except FileNotFoundError:
         data_df = pd.DataFrame(columns=headers)
-    
+
     hashes = set(data_df['hash'])
-    
+
     results = []
     for folder in args.folders:
         result_dict = get_result(folder, args.eval_dataset, data_df, hashes)
@@ -145,6 +147,9 @@ def main():
     results_df = pd.DataFrame(results)
 
     data_df = pd.concat([data_df, results_df], ignore_index=True)
+
+    print(f'{args.folders=}')
+    print(f'{args.eval_dataset=}')
 
     pickle.dump(data_df, open(args.output_file, 'wb'))
     data_df.to_excel(args.excel_file, index=False)
