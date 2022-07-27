@@ -51,6 +51,7 @@ from transformers import (
 )
 import transformers
 from processors.amazonzh import AmazonZhProcessor
+from processors.amazonzhmlm import AmazonZhMLMProcessor
 from processors.idclickbait import IdClickbaitProcessor
 from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
@@ -163,7 +164,8 @@ PROCESSORS = {
                      'idclickbait': IdClickbaitProcessor},
   'lang_discrim': {'mldoc': MLDocProcessor,
                    'xnli': XNLILDProcessor},
-  'mlm': {'reco': ReCOProcessor,
+  'mlm': {'amazonzh': AmazonZhMLMProcessor,
+          'reco': ReCOProcessor,
           'ruw': RuwProcessor,
           'webtext2019': Webtext2019Processor,
           'wikizh': WikiZhProcessor},
