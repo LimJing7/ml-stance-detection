@@ -18,6 +18,7 @@
 
 
 import argparse
+import bisect
 import glob
 import logging
 import os
@@ -26,7 +27,6 @@ import random
 import statistics
 
 import numpy as np
-from regex import P
 import sklearn
 from sklearn.metrics import f1_score
 import torch
@@ -52,6 +52,7 @@ from transformers import (
 import transformers
 from processors.amazonzh import AmazonZhProcessor
 from processors.amazonzhmlm import AmazonZhMLMProcessor
+from processors.combnlpcc_fs import create_comb_nlpcc_fs_processor
 from processors.idclickbait import IdClickbaitProcessor
 from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
@@ -134,6 +135,10 @@ PROCESSORS = {
              'argmin': ArgMinProcessor,
              'asap': ASAPProcessor,
              'comb_nlpcc': CombNLPCCProcessor,
+             'comb_nlpcc_5': create_comb_nlpcc_fs_processor(5),
+             'comb_nlpcc_32': create_comb_nlpcc_fs_processor(32),
+             'comb_nlpcc_128': create_comb_nlpcc_fs_processor(128),
+             'comb_nlpcc_256': create_comb_nlpcc_fs_processor(256),
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,
              'ibmcs': IBMCSProcessor,
@@ -371,7 +376,7 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id=None):
+def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id=None, train_ratios=None):
   """Train the model."""
   if args.local_rank in [-1, 0]:
     tb_writer = SummaryWriter(f'runs/{args.output_dir.split("/")[-1]}')
@@ -380,8 +385,24 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
   compute_loss = get_compute_loss(args, tokenizer, model, datasets)
 
   args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-  train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
-  train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
+  if isinstance(train_dataset, list):
+    combined_train = False
+    train_sampler = []
+    train_dataloader = []
+    for train_ds in train_dataset:
+      train_sp = RandomSampler(train_ds) if args.local_rank == -1 else DistributedSampler(train_ds)
+      train_dl = DataLoader(train_ds, sampler=train_sp, batch_size=args.train_batch_size)
+      train_iter = iter(train_dl)
+      train_sampler.append(train_sp)
+      train_dataloader.append(train_dl)
+      train_iterator.append(train_iter)
+    train_probs_base = sum(train_ratios)
+    train_probs = [i/train_probs_base for i in train_ratios]
+    cum_probs = np.cumsum(train_probs)
+  else:
+    combined_train = True
+    train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 else DistributedSampler(train_dataset)
+    train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
   if args.sup_simcse:
     parallel_sampler = RandomSampler(parallel_dataset) if args.local_rank == -1 else DistributedSampler(parallel_dataset)
@@ -413,11 +434,15 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
     ld_dataloader = DataLoader(ld_dataset, sampler=ld_sampler, batch_size=args.train_batch_size)
     ld_iterator = iter(ld_dataloader)
 
+  if combined_train:
+    n_train_examples = len(train_dataloader)
+  else:
+    n_train_examples = sum([len(i) for i in train_dataloader])
   if args.max_steps > 0:
     t_total = args.max_steps
-    args.num_train_epochs = args.max_steps // (len(train_dataloader) // args.gradient_accumulation_steps) + 1
+    args.num_train_epochs = args.max_steps // (n_train_examples // args.gradient_accumulation_steps) + 1
   else:
-    t_total = len(train_dataloader) // args.gradient_accumulation_steps * args.num_train_epochs
+    t_total = n_train_examples // args.gradient_accumulation_steps * args.num_train_epochs
 
   # Prepare optimizer and schedule (linear warmup and decay)
   no_decay = ["bias", "LayerNorm.weight"]
@@ -502,8 +527,8 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
   if os.path.exists(args.model_name_or_path):
     # set global_step to gobal_step of last saved checkpoint from model path
     global_step = int(args.model_name_or_path.split("-")[-1].split("/")[0])
-    epochs_trained = global_step // (len(train_dataloader) // args.gradient_accumulation_steps)
-    steps_trained_in_current_epoch = global_step % (len(train_dataloader) // args.gradient_accumulation_steps)
+    epochs_trained = global_step // (n_train_examples // args.gradient_accumulation_steps)
+    steps_trained_in_current_epoch = global_step % (n_train_examples // args.gradient_accumulation_steps)
 
     logger.info("  Continuing training from checkpoint, will skip to saved global_step")
     logger.info("  Continuing training from epoch %d", epochs_trained)
@@ -524,8 +549,21 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
   )
   set_seed(args)  # Added here for reproductibility
   for _ in train_iterator:
-    epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
+    if combined_train:
+      epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
+    else:
+      epoch_iterator = tqdm(range(n_train_examples), desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
     for step, batch in enumerate(epoch_iterator):
+      if not combined_train:
+        train_rand_id = random.random()
+        train_ds_id = bisect.bisect_left(cum_probs, train_rand_id)
+        try:
+          batch = next(train_iterator[train_ds_id])
+        except StopIteration:
+          train_iter = iter(train_dataloader[train_ds_id])
+          train_iterator[train_ds_id] = train_iter
+          batch = next(train_iterator[train_ds_id])
+
       # Skip past any already trained steps if resuming training
       if steps_trained_in_current_epoch > 0:
         steps_trained_in_current_epoch -= 1
@@ -1359,6 +1397,13 @@ def main():
     help="Train dataset(s)."
   )
   parser.add_argument(
+    "--train_ds_probs",
+    default=[1],
+    nargs="*",
+    type=float,
+    help="Proportion of time to use a dataset"
+  )
+  parser.add_argument(
     "--predict_datasets",
     default=["arc"],
     nargs="*",
@@ -1679,7 +1724,10 @@ def main():
         new_train_dataset = TensorDataset(*ds_tensors, weight_tensor)
         weighted_train_datasets.append(new_train_dataset)
       train_datasets = weighted_train_datasets
-    train_dataset = ConcatDataset(train_datasets)
+    if len(args.train_ds_probs) == 1 and args.train_ds_probs[0] == 1:
+      train_dataset = ConcatDataset(train_datasets)
+    else:
+      train_dataset = train_datasets
     if args.ld_dataset is not None:
       ld_dataset = load_and_cache_ld_examples(args, args.ld_dataset, tokenizer)
     else:
@@ -1702,7 +1750,7 @@ def main():
         ud_datasets.append(ud_dataset)
     else:
       ud_datasets = None
-    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id)
+    global_step, tr_loss, best_score, best_checkpoint = train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_datasets, model, tokenizer, lang2id, args.train_ds_probs)
     logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
     logger.info(" best checkpoint = {}, best score = {}".format(best_checkpoint, best_score))
 
