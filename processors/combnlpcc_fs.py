@@ -25,55 +25,54 @@ from .utils import StanceExample
 logger = logging.getLogger(__name__)
 
 
-def create_comb_nlpcc_fs_processor(shots):
-    class CombNLPCCFewShotProcessor(DataProcessor):
-        """Processor for the NLPCC dataset.
-        Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
+class CombNLPCCFewShotProcessor(DataProcessor):
+    """Processor for the NLPCC dataset.
+    Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
 
-        label_map = {'AGAINST': 'against',
-                    'FAVOR': 'in favour',
-                    'NONE': 'neutral'}
-        language = 'zh'
+    label_map = {'AGAINST': 'against',
+                'FAVOR': 'in favour',
+                'NONE': 'neutral'}
+    language = 'zh'
 
-        def __init__(self):
-            pass
+    def __init__(self, shots, random_seed):
+        self.shots = shots
+        self.random_seed = random_seed
+        pass
 
-        def get_examples(self, data_dir, split='train'):
-            """See base class."""
-            examples = []
-            lines = self._read_tsv(os.path.join(data_dir, f"comb_nlpcc_{shots}-{split}.tsv"), quotechar='"')
+    def get_examples(self, data_dir, split='train'):
+        """See base class."""
+        examples = []
+        lines = self._read_tsv(os.path.join(data_dir, f"comb_nlpcc_{self.shots}_{self.random_seed}-{split}.tsv"), quotechar='"')
 
-            for (i, line) in enumerate(lines):
-                guid = "%s-%s" % (split, i)
-                topic = line[1]
-                text = line[2]
-                if split == 'test' and len(line) != 4:
-                    label = "neutral"
-                else:
-                    label = CombNLPCCFewShotProcessor.label_map[str(line[3].strip())]
-                assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
-                examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
-            return examples
+        for (i, line) in enumerate(lines):
+            guid = "%s-%s" % (split, i)
+            topic = line[1]
+            text = line[2]
+            if split == 'test' and len(line) != 4:
+                label = "neutral"
+            else:
+                label = CombNLPCCFewShotProcessor.label_map[str(line[3].strip())]
+            assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
+            examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+        return examples
 
-        def get_train_examples(self, data_dir):
-            return self.get_examples(data_dir, split='train')
+    def get_train_examples(self, data_dir):
+        return self.get_examples(data_dir, split='train')
 
-        def get_dev_examples(self, data_dir):
-            return self.get_examples(data_dir, split='dev')
+    def get_dev_examples(self, data_dir):
+        return self.get_examples(data_dir, split='dev')
 
-        def get_test_examples(self, data_dir, ):
-            return self.get_examples(data_dir, split='test')
+    def get_test_examples(self, data_dir, ):
+        return self.get_examples(data_dir, split='test')
 
-        def get_labels(self):
-            """See base class."""
-            return ["against", "in favour", "neutral"]  # changing labels require overwriting cache
-
-    return CombNLPCCFewShotProcessor
+    def get_labels(self):
+        """See base class."""
+        return ["against", "in favour", "neutral"]  # changing labels require overwriting cache
 
 
-# comb_nlpcc_processors = {
-#     "stance": CombNLPCCFewShotProcessor,
-# }
+comb_nlpcc_processors = {
+    "stance": CombNLPCCFewShotProcessor,
+}
 
 comb_nlpcc_output_modes = {
     "stance": "classification",

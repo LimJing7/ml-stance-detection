@@ -52,7 +52,6 @@ from transformers import (
 import transformers
 from processors.amazonzh import AmazonZhProcessor
 from processors.amazonzhmlm import AmazonZhMLMProcessor
-from processors.combnlpcc_fs import create_comb_nlpcc_fs_processor
 from processors.idclickbait import IdClickbaitProcessor
 from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
@@ -78,6 +77,7 @@ from processors.argmin import ArgMinProcessor
 from processors.arc import ARCProcessor
 from processors.asap import ASAPProcessor
 from processors.combnlpcc import CombNLPCCProcessor
+from processors.combnlpcc_fs import CombNLPCCFewShotProcessor
 from processors.fnc1 import FNC1Processor
 from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
@@ -135,10 +135,10 @@ PROCESSORS = {
              'argmin': ArgMinProcessor,
              'asap': ASAPProcessor,
              'comb_nlpcc': CombNLPCCProcessor,
-             'comb_nlpcc_5': create_comb_nlpcc_fs_processor(5),
-             'comb_nlpcc_32': create_comb_nlpcc_fs_processor(32),
-             'comb_nlpcc_128': create_comb_nlpcc_fs_processor(128),
-             'comb_nlpcc_256': create_comb_nlpcc_fs_processor(256),
+             'comb_nlpcc_5': CombNLPCCFewShotProcessor,
+             'comb_nlpcc_32': CombNLPCCFewShotProcessor,
+             'comb_nlpcc_128': CombNLPCCFewShotProcessor,
+             'comb_nlpcc_256': CombNLPCCFewShotProcessor,
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,
              'ibmcs': IBMCSProcessor,
@@ -196,7 +196,11 @@ def get_compute_preds(args, tokenizer, model, datasets):
     datasets = [datasets]
   embeded_tokens = []
   for ds in datasets:
-    processor = PROCESSORS[args.task_name][ds]()
+    if ds.startswith('comb_nlpcc_'):
+      count = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    else:
+      processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
     for label in labels:
       if args.use_embed_dotproduct:
@@ -223,7 +227,11 @@ def get_compute_loss(args, tokenizer, model, datasets):
   if type(datasets) != list:
     datasets = [datasets]
   for ds in datasets:
-    processor = PROCESSORS[args.task_name][ds]()
+    if ds.startswith('comb_nlpcc_'):
+      count = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    else:
+      processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
     for label in labels:
       lab_tok = tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device)
@@ -232,7 +240,11 @@ def get_compute_loss(args, tokenizer, model, datasets):
   if args.negative_samples > 0:
     negative_labels = {}
     for ds in datasets:
-      processor = PROCESSORS[args.task_name][ds]()
+      if ds.startswith('comb_nlpcc_'):
+        count = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      else:
+        processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
       negative_labels[ds] = {lab:set() for lab in labels}
       for label, syns in args.synonyms[ds].items():
@@ -242,7 +254,11 @@ def get_compute_loss(args, tokenizer, model, datasets):
             negative_labels[ds][key].update(toked)
     sorted_negative_labels = []
     for ds in datasets:
-      processor = PROCESSORS[args.task_name][ds]()
+      if ds.startswith('comb_nlpcc_'):
+        count = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      else:
+        processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
       for label in labels:
         sorted_negative_labels.append(list(negative_labels[ds][label]))
@@ -872,7 +888,11 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       shift = 0
       for ds in dataset:
         eval_dataset = load_and_cache_examples(args, eval_task, ds, tokenizer, split=split, lang2id=lang2id, evaluate=True, shift=shift)
-        processor = PROCESSORS[args.task_name][ds]()
+        if ds.startswith('comb_nlpcc_'):
+          count = ds.split('_')[-1]
+          processor = PROCESSORS[args.task_name][ds](count, args.seed)
+        else:
+          processor = PROCESSORS[args.task_name][ds]()
         labels_list.extend(processor.get_labels())
         n_labels = len(processor.get_labels())
         shift += n_labels
@@ -880,7 +900,11 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       eval_dataset = ConcatDataset(eval_datasets)
     else:
       eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, lang2id=lang2id, evaluate=True)
-      processor = PROCESSORS[args.task_name][dataset]()
+      if dataset.startswith('comb_nlpcc_'):
+        count = dataset.split('_')[-1]
+        processor = PROCESSORS[args.task_name][dataset](count, args.seed)
+      else:
+        processor = PROCESSORS[args.task_name][dataset]()
       labels_list.extend(processor.get_labels())
 
     if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
@@ -987,7 +1011,11 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
-  processor = PROCESSORS[task][dataset]()
+  if dataset.startswith('comb_nlpcc_'):
+    count = dataset.split('_')[-1]
+    processor = PROCESSORS[task][dataset](count, args.seed)
+  else:
+    processor = PROCESSORS[task][dataset]()
   n_labels = len(processor.get_labels())
   language = processor.language
   output_mode = "classification"
@@ -1711,7 +1739,11 @@ def main():
       train_dataset = load_and_cache_examples(args, args.task_name, train_ds, tokenizer, split=args.train_split, lang2id=lang2id, evaluate=False, shift=shift)
       train_datasets.append(train_dataset)
 
-      processor = PROCESSORS[args.task_name][train_ds]()
+      if train_ds.startswith('comb_nlpcc_'):
+        count = train_ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name][train_ds](count, args.seed)
+      else:
+        processor = PROCESSORS[args.task_name][train_ds]()
       n_labels = len(processor.get_labels())
       shift += n_labels
     if args.ds_weights != 'equal':

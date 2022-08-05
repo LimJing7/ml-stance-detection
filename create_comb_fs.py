@@ -29,11 +29,11 @@ def main():
     fewshot_train = train_set[:args.train_count]
     comb_dev = dev_set + train_set[args.train_count:]
 
-    with open(f'{args.dir}/comb_nlpcc_{args.train_count}-train.tsv', 'w') as write_file:
+    with open(f'{args.dir}/comb_nlpcc_{args.train_count}_{args.seed}-train.tsv', 'w') as write_file:
         writer = csv.writer(write_file, delimiter='\t')
         writer.writerows(fewshot_train)
 
-    with open(f'{args.dir}/comb_nlpcc_{args.train_count}-dev.tsv', 'w') as write_file:
+    with open(f'{args.dir}/comb_nlpcc_{args.train_count}_{args.seed}-dev.tsv', 'w') as write_file:
         writer = csv.writer(write_file, delimiter='\t')
         writer.writerows(comb_dev)
 
