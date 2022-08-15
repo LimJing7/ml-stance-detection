@@ -125,7 +125,7 @@ def main():
     )
     parser.add_argument(
         '--eval_dataset',
-        choices=['nlpcc', 'tnlpcc', 'comb_nlpcc'],
+        choices=['nlpcc', 'tnlpcc', 'comb_nlpcc', 'xstance_de', 'efra', 'rita', 'trans_nlpcc', 'trans_comb_nlpcc'],
         help='which dataset\'s score',
         required=True,
     )

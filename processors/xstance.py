@@ -13,75 +13,68 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" MLDoc utils (dataset loading and evaluation) """
+""" x-stance utils (dataset loading and evaluation) """
 
 
-import csv
+import jsonlines
 import logging
 import os
 
 from transformers import DataProcessor
-from .utils import InputExample
-
+from .utils import StanceExample
 
 logger = logging.getLogger(__name__)
 
 
-class MLDocProcessor(DataProcessor):
-    """Processor for the MLDocProcessor dataset for training lang discriminator.
+class XStanceProcessor(DataProcessor):
+    """Processor for the x-stance dataset.
     Adapted from https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/run_classifier.py#L207"""
 
-    language = 'en-zh'
+    label_map = {'AGAINST': 'against',
+                 'FAVOR': 'in favour'}
+
+    language = 'de'
 
     def __init__(self, lang):
-        self.language = f'en-{lang}'
         self.lang = lang
+        self.language = lang
 
     def get_examples(self, data_dir, split='train'):
         """See base class."""
         examples = []
-        with open(os.path.join(data_dir, f"mldoc-en-{split}.tsv")) as f:
-            reader = csv.reader(f, delimiter='\t', quotechar='"')
+        with jsonlines.open(os.path.join(data_dir, f"xstance-{self.lang}-{split}.jsonl")) as f:
 
-            for i, row in enumerate(reader):
-                en_guid = "%s-%s" % (split, i)
-                en_text = row[1]
-
-                examples.append(InputExample(guid=en_guid, text_a=en_text, label=1))
-
-        with open(os.path.join(data_dir, f"mldoc-{self.lang}-{split}.tsv")) as f:
-            reader = csv.reader(f, delimiter='\t', quotechar='"')
-
-            for j, row in enumerate(reader):
-                l2_guid = "%s-%s" % (split, j+i)
-                l2_text = row[1].strip('(c) Reuters Limited 1997')
-
-                examples.append(InputExample(guid=l2_guid, text_a=l2_text, label=0))
-
-        return examples
+            for (i, line) in enumerate(f):
+                guid = "%s-%s" % (split, i)
+                topic = line['question']  # line['topic'] for a topic but the label doesn't match properly
+                text = line['comment']
+                label = XStanceProcessor.label_map[line['label']]
+                assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
+                examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+            return examples
 
     def get_train_examples(self, data_dir):
         return self.get_examples(data_dir, split='train')
 
     def get_dev_examples(self, data_dir):
-        raise NotImplementedError('no dev set')
+        return self.get_examples(data_dir, split='dev')
 
     def get_test_examples(self, data_dir, ):
-        raise NotImplementedError('no test set')
+        return self.get_examples(data_dir, split='test')
 
     def get_labels(self):
         """See base class."""
-        return []
+        return ["against", "in favour"]  # changing labels require overwriting cache
 
 
-mldoc_processors = {
-    "stance": MLDocProcessor,
+xstance_processors = {
+    "stance": XStanceProcessor,
 }
 
-mldoc_output_modes = {
+xstance_output_modes = {
     "stance": "classification",
 }
 
-mldoc_tasks_num_labels = {
+xstance_tasks_num_labels = {
     "stance": 2,
 }

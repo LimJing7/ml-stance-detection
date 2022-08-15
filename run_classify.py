@@ -51,7 +51,7 @@ from transformers import (
 )
 import transformers
 from processors.amazonzh import AmazonZhProcessor
-from processors.amazonzhmlm import AmazonZhMLMProcessor
+from processors.amazonmlm import AmazonMLMProcessor
 from processors.idclickbait import IdClickbaitProcessor
 from processors.nli_for_simcse import NLIforSIMCSEProcessor
 from processors.parallel_nli import ParallelNLIProcessor
@@ -78,17 +78,23 @@ from processors.arc import ARCProcessor
 from processors.asap import ASAPProcessor
 from processors.combnlpcc import CombNLPCCProcessor
 from processors.combnlpcc_fs import CombNLPCCFewShotProcessor
+from processors.efra import EFraProcessor
 from processors.fnc1 import FNC1Processor
 from processors.iac1 import IAC1Processor
 from processors.ibmcs import IBMCSProcessor
 from processors.nlpcc import NLPCCProcessor
 from processors.perspectrum import PerspectrumProcessor
+from processors.rita import RItaProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
+from processors.sentistance_enwiki import SentiStanceEnWikiProcessor
+from processors.sentistance_mwiki import SentiStanceMWikiProcessor
 from processors.snopes import SnopesProcessor
+from processors.trans_combnlpcc import TransCombNLPCCProcessor
 from processors.trans_nlpcc import TransNLPCCProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
+from processors.xstance import XStanceProcessor
 from processors.tnlpcc import tNLPCCProcessor
 
 from processors.mldoc import MLDocProcessor
@@ -139,17 +145,23 @@ PROCESSORS = {
              'comb_nlpcc_32': CombNLPCCFewShotProcessor,
              'comb_nlpcc_128': CombNLPCCFewShotProcessor,
              'comb_nlpcc_256': CombNLPCCFewShotProcessor,
+             'efra': EFraProcessor,
              'fnc1': FNC1Processor,
              'iac1': IAC1Processor,
              'ibmcs': IBMCSProcessor,
              'nlpcc': NLPCCProcessor,
              'perspectrum': PerspectrumProcessor,
+             'rita': RItaProcessor,
              'semeval2016t6': SemEval2016t6Processor,
              'snopes': SnopesProcessor,
+             'sentistance_enwiki': SentiStanceEnWikiProcessor,
+             'sentistance_mwiki': SentiStanceMWikiProcessor,
+             'trans_comb_nlpcc': TransCombNLPCCProcessor,
              'trans_nlpcc': TransNLPCCProcessor,
              'twitter2015': Twitter2015Processor,
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor,
+             'xstance': XStanceProcessor,
              'tnlpcc': tNLPCCProcessor},
   'zh_stance': {'arc': ARCZhStanceProcessor,
                 'argmin': ArgMinZhStanceProcessor,
@@ -169,7 +181,7 @@ PROCESSORS = {
                      'idclickbait': IdClickbaitProcessor},
   'lang_discrim': {'mldoc': MLDocProcessor,
                    'xnli': XNLILDProcessor},
-  'mlm': {'amazonzh': AmazonZhMLMProcessor,
+  'mlm': {'amazon': AmazonMLMProcessor,
           'reco': ReCOProcessor,
           'ruw': RuwProcessor,
           'webtext2019': Webtext2019Processor,
@@ -199,6 +211,9 @@ def get_compute_preds(args, tokenizer, model, datasets):
     if ds.startswith('comb_nlpcc_'):
       count = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    elif ds.startswith('xstance_'):
+      lang = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name]['xstance'](lang)
     else:
       processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
@@ -230,6 +245,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
     if ds.startswith('comb_nlpcc_'):
       count = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    elif ds.startswith('xstance_'):
+      lang = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name]['xstance'](lang)
     else:
       processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
@@ -243,6 +261,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       if ds.startswith('comb_nlpcc_'):
         count = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      elif ds.startswith('xstance_'):
+        lang = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['xstance'](lang)
       else:
         processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
@@ -257,6 +278,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       if ds.startswith('comb_nlpcc_'):
         count = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      elif ds.startswith('xstance_'):
+        lang = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['xstance'](lang)
       else:
         processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
@@ -891,6 +915,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         if ds.startswith('comb_nlpcc_'):
           count = ds.split('_')[-1]
           processor = PROCESSORS[args.task_name][ds](count, args.seed)
+        elif ds.startswith('xstance_'):
+          lang = ds.split('_')[-1]
+          processor = PROCESSORS[args.task_name]['xstance'](lang)
         else:
           processor = PROCESSORS[args.task_name][ds]()
         labels_list.extend(processor.get_labels())
@@ -903,6 +930,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       if dataset.startswith('comb_nlpcc_'):
         count = dataset.split('_')[-1]
         processor = PROCESSORS[args.task_name][dataset](count, args.seed)
+      elif dataset.startswith('xstance_'):
+        lang = dataset.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['xstance'](lang)
       else:
         processor = PROCESSORS[args.task_name][dataset]()
       labels_list.extend(processor.get_labels())
@@ -1014,6 +1044,9 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   if dataset.startswith('comb_nlpcc_'):
     count = dataset.split('_')[-1]
     processor = PROCESSORS[task][dataset](count, args.seed)
+  elif dataset.startswith('xstance_'):
+    lang = dataset.split('_')[-1]
+    processor = PROCESSORS[task]['xstance'](lang)
   else:
     processor = PROCESSORS[task][dataset]()
   n_labels = len(processor.get_labels())
@@ -1192,7 +1225,12 @@ def load_and_cache_mlm_examples(args, dataset, tokenizer, split='train', evaluat
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
-  processor = PROCESSORS['mlm'][dataset]()
+  if dataset.startswith('amazon_'):
+    lang = dataset.split('_')[-1]
+    processor = PROCESSORS['mlm']['amazon'](lang)
+  else:
+    processor = PROCESSORS['mlm'][dataset]()
+
   language = processor.language
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
@@ -1334,7 +1372,11 @@ def load_and_cache_ld_examples(args, dataset, tokenizer, split='train', evaluate
   if args.local_rank not in [-1, 0] and not evaluate:
     torch.distributed.barrier()
 
-  processor = PROCESSORS['lang_discrim'][dataset]()
+  if dataset.startswith('mldoc'):
+    lang = dataset.split('_')[-1]
+    processor = PROCESSORS['lang_discrim']['mldoc'](lang)
+  else:
+    processor = PROCESSORS['lang_discrim'][dataset]()
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
 
@@ -1704,12 +1746,18 @@ def main():
 
   args.train_language = []
   for train_ds in args.train_dataset:
-    lang = PROCESSORS[args.task_name][train_ds].language
+    try:
+      lang = PROCESSORS[args.task_name][train_ds].language
+    except KeyError:
+      lang = PROCESSORS[args.task_name]['_'.join(train_ds.split('_')[:-1])].language
     args.train_language.append(lang)
 
   args.predict_languages = []
   for pred_ds in args.predict_datasets:
-    lang = PROCESSORS[args.task_name][pred_ds].language
+    if pred_ds.startswith('xstance'):
+      lang = pred_ds.split('_')[-1]
+    else:
+      lang = PROCESSORS[args.task_name][pred_ds].language
     args.predict_languages.append(lang)
 
   # Training
@@ -1742,6 +1790,9 @@ def main():
       if train_ds.startswith('comb_nlpcc_'):
         count = train_ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][train_ds](count, args.seed)
+      elif train_ds.startswith('xstance_'):
+        lang = train_ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['xstance'](lang)
       else:
         processor = PROCESSORS[args.task_name][train_ds]()
       n_labels = len(processor.get_labels())
