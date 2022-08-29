@@ -28,7 +28,7 @@ import statistics
 
 import numpy as np
 import sklearn
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_recall_fscore_support
 import torch
 from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
 from torch.utils.data import RandomSampler, SequentialSampler
@@ -378,7 +378,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
   return compute_loss
 
 
-def compute_metrics(preds, labels):
+def compute_metrics(preds, labels, topics, tokenizer):
   scores = {
     "acc": (preds == labels).mean(),
     "num": len(
@@ -386,6 +386,15 @@ def compute_metrics(preds, labels):
     "correct": (preds == labels).sum(),
     "macro f1": f1_score(labels, preds, average='macro')
   }
+  unique_topics, topics_mapping = np.unique(topics, axis=0, return_inverse=True)
+  labels_order = list(set(labels))
+  scores['labels_order'] = labels_order
+  for i, topic in enumerate(unique_topics):
+    t_name = tokenizer.convert_tokens_to_string( tokenizer.convert_ids_to_tokens(topic)).strip('<pad>')
+    precision, recall, f1, support = precision_recall_fscore_support(labels[topics_mapping==i], preds[topics_mapping==i], average=None, labels=labels_order)
+    scores[f'{t_name}_precisions'] = precision
+    scores[f'{t_name}_recalls'] = recall
+    scores[f'{t_name}_f1s'] = f1
   return scores
 
 
@@ -612,19 +621,20 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
       model.train()
       batch = tuple(t.to(args.device) for t in batch)
       inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
-      all_shifts = batch[4]
-      all_ends = batch[5]
+      all_topics = batch[4]
+      all_shifts = batch[5]
+      all_ends = batch[6]
       if args.mlm:
-        inputs['labels'] = batch[6]
+        inputs['labels'] = batch[7]
       if args.model_type != "distilbert":
         inputs["token_type_ids"] = (
           batch[2] if args.model_type in ["bert"] else None
         )  # XLM don't use segment_ids
       if args.model_type == "xlm":
         if args.mlm:
-          inputs["langs"] = batch[7]
+          inputs["langs"] = batch[8]
         else:
-          inputs["langs"] = batch[6]
+          inputs["langs"] = batch[7]
       outputs = model(**inputs, output_hidden_states=True)
 
       if args.robust == 'rs_rp':
@@ -802,15 +812,28 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
                   results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
                   for key, value in results.items():
-                    tb_writer.add_scalar("eval_{}/{}".format(key, ds), value, global_step)
+                    print(key, value)
+                    try:
+                      if isinstance(value, list) or isinstance(value, np.ndarray):
+                        tb_writer.add_scalars("eval_{}/{}".format(key, ds), {str(i):v for i,v in enumerate(value)}, global_step)
+                      else:
+                        tb_writer.add_scalar("eval_{}/{}".format(key, ds), value, global_step)
+                    except NotImplementedError:
+                      pass
               else:
                 results = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
                 for key, value in results.items():
-                  tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+                  try:
+                    tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+                  except NotImplementedError:
+                    pass
             else:
               results = evaluate(args, model, tokenizer, split=args.train_split, dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
               for key, value in results.items():
-                tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+                try:
+                  tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+                except NotImplementedError:
+                  pass
 
         if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
           if args.eval_test_set:
@@ -964,29 +987,32 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
       with torch.no_grad():
         inputs = {"input_ids": batch[0], "attention_mask": batch[1], "labels": batch[3]}
-        all_shifts = batch[4]
-        all_ends = batch[5]
+        batch_topics = batch[4]
+        batch_shifts = batch[5]
+        batch_ends = batch[6]
         if args.model_type != "distilbert":
           inputs["token_type_ids"] = (
             batch[2] if args.model_type in ["bert"] else None
           )  # XLM and DistilBERT don't use segment_ids
         if args.model_type == "xlm":
-          inputs["langs"] = batch[6]
+          inputs["langs"] = batch[7]
         outputs = model(**inputs, output_hidden_states=True)
         logits = outputs['hidden_states'][-1]
 
-        tmp_eval_loss = compute_loss(model, logits, batch[3], all_shifts, all_ends)
+        tmp_eval_loss = compute_loss(model, logits, batch[3], batch_shifts, batch_ends)
         eval_loss += tmp_eval_loss.mean().item()
 
         l_mask = batch[3] == -100
       nb_eval_steps += 1
       if preds is None:
-        preds = compute_preds(logits[~l_mask], all_shifts, all_ends).detach().cpu().numpy()
+        preds = compute_preds(logits[~l_mask], batch_shifts, batch_ends).detach().cpu().numpy()
+        topics = batch_topics.detach().cpu().numpy()
         out_label_ids = inputs["labels"][~l_mask].detach().cpu().numpy()
         if output_file:
           sentences = inputs["input_ids"].detach().cpu().numpy()
       else:
-        preds = np.append(preds, compute_preds(logits[~l_mask], all_shifts, all_ends).detach().cpu().numpy(), axis=0)
+        preds = np.append(preds, compute_preds(logits[~l_mask], batch_shifts, batch_ends).detach().cpu().numpy(), axis=0)
+        topics = np.append(topics, batch_topics.detach().cpu().numpy(), axis=0)
         out_label_ids = np.append(out_label_ids, inputs["labels"][~l_mask].detach().cpu().numpy(), axis=0)
         if output_file:
           sentences = np.append(sentences, inputs["input_ids"].detach().cpu().numpy(), axis=0)
@@ -997,7 +1023,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
     #   # preds = np.argmax(preds, axis=1)
     # else:
     #   raise ValueError("No other `output_mode` for XNLI.")
-    result = compute_metrics(preds, out_label_ids)
+    result = compute_metrics(preds, out_label_ids, topics, tokenizer)
     results.update(result)
 
     if output_file:
@@ -1007,18 +1033,17 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         pad_token_id = tokenizer.pad_token_id
         sentences = sentences.astype(int).tolist()
         sentences = [[w for w in s if w != pad_token_id]for s in sentences]
-        sentences = [tokenizer.convert_ids_to_tokens(s) for s in sentences]
+        sentences = [tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(s)) for s in sentences]
         #fout.write('Prediction\tLabel\tSentences\n')
         for p, l, s in zip(list(preds), list(out_label_ids), sentences):
           p = labels_list[int(p)]
           l = labels_list[int(l)]
-          s = ' '.join(s)
           if output_only_prediction:
             fout.write(str(p) + '\n')
           else:
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
 
-      cm = sklearn.metrics.confusion_matrix(out_label_ids, preds, list(range(len(labels_list))))
+      cm = sklearn.metrics.confusion_matrix(out_label_ids, preds, labels=list(range(len(labels_list))))
       # add totals
       cm = np.concatenate([cm, cm.sum(axis=1).reshape(-1,1)], axis=1)
       cm = np.concatenate([cm, cm.sum(axis=0).reshape(1,-1)], axis=0)
@@ -1127,6 +1152,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     all_labels = torch.tensor([[i if i == -100 else i + shift for i in f.label] for f in features], dtype=torch.long)
   else:
     raise ValueError("No other `output_mode` for {}.".format(args.task_name))
+  all_topics = torch.tensor([f.topic for f in features], dtype=torch.long)
   if args.mlm and not evaluate:
     all_mlm_labels = torch.tensor([f.mlm_labels for f in features], dtype=torch.long)
   all_shifts = torch.tensor([shift for f in features], dtype=torch.long)
@@ -1135,15 +1161,15 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   if args.mlm and not evaluate:
     if args.model_type == 'xlm':
       all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_mlm_labels, all_langs)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_topics, all_shifts, all_ends, all_mlm_labels, all_langs)
     else:
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_mlm_labels)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_topics, all_shifts, all_ends, all_mlm_labels)
   else:
     if args.model_type == 'xlm':
       all_langs = torch.tensor([f.langs for f in features], dtype=torch.long)
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends, all_langs)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_topics, all_shifts, all_ends, all_langs)
     else:
-      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_shifts, all_ends)
+      dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels, all_topics, all_shifts, all_ends)
   return dataset
 
 

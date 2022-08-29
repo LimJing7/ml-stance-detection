@@ -117,14 +117,16 @@ class InputFeatures(object):
       Usually  ``1`` for tokens that are NOT MASKED, ``0`` for MASKED (padded) tokens.
     token_type_ids: Segment token indices to indicate first and second portions of the inputs.
     label: Label corresponding to the input
+    topic: topic for this input
   """
 
-  def __init__(self, input_ids, attention_mask=None, token_type_ids=None, langs=None, label=None):
+  def __init__(self, input_ids, attention_mask=None, token_type_ids=None, langs=None, label=None, topic=None):
     self.input_ids = input_ids
     self.attention_mask = attention_mask
     self.token_type_ids = token_type_ids
     self.label = label
     self.langs = langs
+    self.topic = topic
 
   def __repr__(self):
     return str(self.to_json_string())
@@ -150,14 +152,16 @@ class StanceFeatures(InputFeatures):
     token_type_ids: Segment token indices to indicate first and second portions of the inputs.
     label: Label corresponding to the input
     mlm_labels: Label for mlm task
+    topic: topic for this input
   """
-  def __init__(self, input_ids, attention_mask=None, token_type_ids=None, langs=None, label=None, mlm_labels=None):
+  def __init__(self, input_ids, attention_mask=None, token_type_ids=None, langs=None, label=None, mlm_labels=None, topic=None):
     self.input_ids = input_ids
     self.attention_mask = attention_mask
     self.token_type_ids = token_type_ids
     self.label = label
     self.langs = langs
     self.mlm_labels = mlm_labels
+    self.topic = topic
 
 
 class UDFeatures(InputFeatures):
@@ -513,6 +517,7 @@ def convert_examples_to_stance_features(
     text_len = len(toked_text['input_ids'])
     toked_topic = tokenizer.encode_plus(example.topic, add_special_tokens=False)
     topic_len = len(toked_topic['input_ids'])
+    unmodified_toked_topic_ids = toked_topic['input_ids'] + [pad_token]*(max_length-topic_len)
     inputs = tokenizer.encode_plus(pattern, add_special_tokens=True, max_length=max_length)
     if one_sided:
       if  text_len <= working_len:
@@ -653,13 +658,13 @@ def convert_examples_to_stance_features(
     if mlm:
       features.append(
         StanceFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels
+          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, mlm_labels=mlm_labels, topic=unmodified_toked_topic_ids
         )
       )
     else:
       features.append(
         InputFeatures(
-          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label
+          input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, langs=langs, label=label, topic=unmodified_toked_topic_ids
         )
       )
   return features
