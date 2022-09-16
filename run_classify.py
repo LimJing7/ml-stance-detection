@@ -1098,7 +1098,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     args.data_dir,
     f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_{task}_{args.variant}_{language}_{mlm}{lc}{da}",
   )
-  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+  if os.path.exists(cached_features_file) and not args.overwrite_cache and not args.ignore_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
     features = torch.load(cached_features_file)
   else:
@@ -1135,9 +1135,10 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       mlm=args.mlm if not evaluate else False,
       mlm_probability=args.mlm_probability,
     )
-    if args.local_rank in [-1, 0]:
-      logger.info("Saving features into cached file %s", cached_features_file)
-      torch.save(features, cached_features_file)
+    if not args.ignore_cache:
+      if args.local_rank in [-1, 0]:
+        logger.info("Saving features into cached file %s", cached_features_file)
+        torch.save(features, cached_features_file)
 
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
@@ -1198,7 +1199,7 @@ def load_and_cache_parallel_examples(args, dataset, tokenizer, split='train', ev
       lc,
     ),
   )
-  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+  if os.path.exists(cached_features_file) and not args.overwrite_cache and not args.ignore_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
     features = torch.load(cached_features_file)
   else:
@@ -1225,9 +1226,10 @@ def load_and_cache_parallel_examples(args, dataset, tokenizer, split='train', ev
       pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
       pad_token_segment_id=0,
     )
-    if args.local_rank in [-1, 0]:
-      logger.info("Saving features into cached file %s", cached_features_file)
-      torch.save(features, cached_features_file)
+    if not args.ignore_cache:
+      if args.local_rank in [-1, 0]:
+        logger.info("Saving features into cached file %s", cached_features_file)
+        torch.save(features, cached_features_file)
 
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
@@ -1278,7 +1280,7 @@ def load_and_cache_mlm_examples(args, dataset, tokenizer, split='train', evaluat
       join,
     ),
   )
-  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+  if os.path.exists(cached_features_file) and not args.overwrite_cache and not args.ignore_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
     features = torch.load(cached_features_file)
   else:
@@ -1307,9 +1309,10 @@ def load_and_cache_mlm_examples(args, dataset, tokenizer, split='train', evaluat
       mlm_probability=args.mlm_probability,
       join_examples=args.mlm_join_examples,
     )
-    if args.local_rank in [-1, 0]:
-      logger.info("Saving features into cached file %s", cached_features_file)
-      torch.save(features, cached_features_file)
+    if not args.ignore_cache:
+      if args.local_rank in [-1, 0]:
+        logger.info("Saving features into cached file %s", cached_features_file)
+        torch.save(features, cached_features_file)
 
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
@@ -1412,7 +1415,7 @@ def load_and_cache_ld_examples(args, dataset, tokenizer, split='train', evaluate
     args.data_dir,
     f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_lang-discrim{lc}",
   )
-  if os.path.exists(cached_features_file) and not args.overwrite_cache:
+  if os.path.exists(cached_features_file) and not args.overwrite_cache and not args.ignore_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
     features = torch.load(cached_features_file)
   else:
@@ -1439,9 +1442,10 @@ def load_and_cache_ld_examples(args, dataset, tokenizer, split='train', evaluate
       pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
       pad_token_segment_id=0,
     )
-    if args.local_rank in [-1, 0]:
-      logger.info("Saving features into cached file %s", cached_features_file)
-      torch.save(features, cached_features_file)
+    if not args.ignore_cache:
+      if args.local_rank in [-1, 0]:
+        logger.info("Saving features into cached file %s", cached_features_file)
+        torch.save(features, cached_features_file)
 
   # Make sure only the first process in distributed training process the
   # dataset, and the others will use the cache
@@ -1636,6 +1640,9 @@ def main():
   )
   parser.add_argument(
     "--overwrite_cache", action="store_true", help="Overwrite the cached training and evaluation sets"
+  )
+  parser.add_argument(
+    "--ignore_cache", action="store_true", help="Ignore the cached training and evaluation sets"
   )
   parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
 
