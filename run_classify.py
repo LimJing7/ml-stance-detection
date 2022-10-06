@@ -50,6 +50,7 @@ from transformers import (
   get_linear_schedule_with_warmup,
 )
 import transformers
+
 from processors.amazonzh import AmazonZhProcessor
 from processors.amazonmlm import AmazonMLMProcessor
 from processors.idclickbait import IdClickbaitProcessor
@@ -59,6 +60,7 @@ from processors.pawsen import PAWSXEnProcessor
 from processors.pawszh import PAWSXZhProcessor
 from processors.reco import ReCOProcessor
 from processors.ruw import RuwProcessor
+from processors.trans_stance import TransStanceProcessor
 from processors.twitter2015 import Twitter2015Processor
 from processors.trans_nli_for_simcse import TransNLIforSIMCSEProcessor
 from processors.ud import UDProcessor
@@ -120,6 +122,7 @@ from processors.wikizh import WikiZhProcessor
 from perturb import perturb
 
 import ud_head
+import tsnan
 
 try:
   from torch.utils.tensorboard import SummaryWriter
@@ -162,7 +165,10 @@ PROCESSORS = {
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor,
              'xstance': XStanceProcessor,
-             'tnlpcc': tNLPCCProcessor},
+             'tnlpcc': tNLPCCProcessor,
+             'zh': TransStanceProcessor,
+             'shanmugam': ShanmugamProcessor,
+             'tentera': TenteraProcessor},
   'zh_stance': {'arc': ARCZhStanceProcessor,
                 'argmin': ArgMinZhStanceProcessor,
                 'fnc1': FNC1ZhStanceProcessor,
@@ -214,6 +220,9 @@ def get_compute_preds(args, tokenizer, model, datasets):
     elif ds.startswith('xstance_'):
       lang = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name]['xstance'](lang)
+    elif ds.startswith('zh_'):
+      act_ds = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name]['zh'](act_ds)
     else:
       processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
@@ -248,6 +257,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
     elif ds.startswith('xstance_'):
       lang = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name]['xstance'](lang)
+    elif ds.startswith('zh_'):
+      act_ds = ds.split('_')[-1]
+      processor = PROCESSORS[args.task_name]['zh'](act_ds)
     else:
       processor = PROCESSORS[args.task_name][ds]()
     labels = processor.get_labels()
@@ -264,6 +276,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       elif ds.startswith('xstance_'):
         lang = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
+      elif ds.startswith('zh_'):
+        act_ds = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['zh'](act_ds)
       else:
         processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
@@ -281,6 +296,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       elif ds.startswith('xstance_'):
         lang = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
+      elif ds.startswith('zh_'):
+        act_ds = ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['zh'](act_ds)
       else:
         processor = PROCESSORS[args.task_name][ds]()
       labels = processor.get_labels()
@@ -309,12 +327,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
         if args.use_embed_dotproduct:
           embed = torch.mean(model(label, output_hidden_states=True)['hidden_states'][-1][0], axis=0)
         else:
-          if isinstance(model, XLMRobertaForMaskedLM):
-            embed = torch.mean(model.roberta.embeddings(label)[0], axis=0)
-          elif isinstance(model, BertForMaskedLM):
-            embed = torch.mean(model.bert.embeddings(label)[0], axis=0)
-          else:
-            raise NotImplementedError('Model is not supported')
+          embed = get_embed(model, label)
         embeded_labels.append(embed)
       LE = torch.stack(embeded_labels).detach()
       n_labels = len(embeded_labels)
@@ -376,6 +389,22 @@ def get_compute_loss(args, tokenizer, model, datasets):
       return loss
 
   return compute_loss
+
+
+def get_embed(model, label):
+  if isinstance(model, XLMRobertaForMaskedLM):
+    embed = torch.mean(model.roberta.embeddings(label)[0], axis=0)
+  elif isinstance(model, BertForMaskedLM):
+    embed = torch.mean(model.bert.embeddings(label)[0], axis=0)
+  else:
+    raise NotImplementedError('Model is not supported')
+  return embed
+
+
+def get_mask(tokenizer, tensor):
+  pad_token_id = tokenizer.pad_token_id
+  attn_mask = (tensor != pad_token_id).type(torch.int64)
+  return attn_mask
 
 
 def compute_metrics(preds, labels, topics, tokenizer):
@@ -482,6 +511,11 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
     ld_sampler = RandomSampler(ld_dataset) if args.local_rank == -1 else DistributedSampler(ld_dataset)
     ld_dataloader = DataLoader(ld_dataset, sampler=ld_sampler, batch_size=args.train_batch_size)
     ld_iterator = iter(ld_dataloader)
+
+  if args.tsnan:
+    tsnan_model = tsnan.HalfTSNAN(model.config.hidden_size, model.config.hidden_size, model.config.hidden_size).to(args.device)
+  else:
+    tsnan_model = None
 
   if combined_train:
     n_train_examples = len(train_dataloader)
@@ -636,23 +670,32 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
         else:
           inputs["langs"] = batch[7]
       outputs = model(**inputs, output_hidden_states=True)
+      logits = outputs['hidden_states'][-1]
+
+      if args.tsnan:
+        topics_mask = get_mask(tokenizer, all_topics)
+        topics_embed = get_embed(model, all_topics)
+        if args.block_tsnan_topic:
+          topics_embed = topics_embed.detach()
+
+        logits = tsnan_model(topic_emb=topics_embed, topic_mask=topics_mask, text_emb=logits, text_mask=batch[1])
 
       if args.robust == 'rs_rp':
         loss = 0
         for _ in range(args.robust_samples):
-          delta = (torch.rand_like(outputs['hidden_states'][-1]) - 0.5) * 2 * args.robust_size
+          delta = (torch.rand_like(logits) - 0.5) * 2 * args.robust_size
           if args.ds_weights != 'equal':
             ds_weights = batch[-1]
-            loss += compute_loss(model, outputs['hidden_states'][-1] + delta, batch[3], all_shifts, all_ends, ds_weights)
+            loss += compute_loss(model, logits + delta, batch[3], all_shifts, all_ends, ds_weights)
           else:
-            loss += compute_loss(model, outputs['hidden_states'][-1] + delta, batch[3], all_shifts, all_ends)
+            loss += compute_loss(model, logits + delta, batch[3], all_shifts, all_ends)
         loss /= args.robust_samples
       else:
         if args.ds_weights != 'equal':
           ds_weights = batch[-1]
-          loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends, ds_weights)
+          loss = compute_loss(model, logits, batch[3], all_shifts, all_ends, ds_weights)
         else:
-          loss = compute_loss(model, outputs['hidden_states'][-1], batch[3], all_shifts, all_ends)
+          loss = compute_loss(model, logits, batch[3], all_shifts, all_ends)
 
       if args.mlm:
         mlm_loss = outputs['loss']
@@ -661,9 +704,9 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
         else:
           loss = args.alpha * loss + (1-args.alpha) * mlm_loss
 
-      if args.nonsup_simcse:
+      if args.nonsup_simcse:  # TODO not compatible with tsnan
         outputs2 = model(**inputs, output_hidden_states=True)
-        v1 = outputs['hidden_states'][-1][:,0]
+        v1 = logits[:,0]
         v2 = outputs2['hidden_states'][-1][:,0]
 
         cos_sim = cos_sim_fn(v1.unsqueeze(1), v2.unsqueeze(0)) / args.simcse_temp
@@ -810,7 +853,7 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
             if args.eval_during_train_on_dev:
               if args.eval_during_train_use_pred_dataset:
                 for lang, ds in zip(args.predict_languages, args.predict_datasets):
-                  results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id)
+                  results = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=lang, lang2id=lang2id, tsnan_model=tsnan_model)
                   for key, value in results.items():
                     print(key, value)
                     try:
@@ -821,14 +864,14 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
                     except NotImplementedError:
                       pass
               else:
-                results = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
+                results = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, tsnan_model=tsnan_model)
                 for key, value in results.items():
                   try:
                     tb_writer.add_scalar("eval_{}".format(key), value, global_step)
                   except NotImplementedError:
                     pass
             else:
-              results = evaluate(args, model, tokenizer, split=args.train_split, dataset=args.train_dataset, language=args.train_language, lang2id=lang2id)
+              results = evaluate(args, model, tokenizer, split=args.train_split, dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, tsnan_model=tsnan_model)
               for key, value in results.items():
                 try:
                   tb_writer.add_scalar("eval_{}".format(key), value, global_step)
@@ -842,7 +885,7 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
             with open(output_predict_file, 'a') as writer:
               writer.write('\n======= Predict using the model from checkpoint-{}:\n'.format(global_step))
               for language, ds in zip(args.predict_languages, args.predict_datasets):
-                result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step))
+                result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='checkpoint-'+str(global_step), tsnan_model=tsnan_model)
                 writer.write('{}={}\n'.format(ds, result['acc']))
                 total += result['num']
                 total_correct += result['correct']
@@ -853,7 +896,7 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
               accs = []
               f1s = []
               for language, ds in zip(args.predict_languages, args.predict_datasets):
-                result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step))
+                result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix=str(global_step), tsnan_model=tsnan_model)
                 accs.append(result['acc'])
                 f1s.append(result['macro f1'])
               acc = statistics.mean(accs)
@@ -861,7 +904,7 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
               logger.info(" Dev accuracy {} = {}".format(args.predict_datasets, acc))
               logger.info(" Dev macro f1 {} = {}".format(args.predict_datasets, f1))
             else:
-              result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step))
+              result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=str(global_step), tsnan_model=tsnan_model)
               logger.info(" Dev accuracy {} = {}".format(args.train_language, result['acc']))
               logger.info(" Dev macro f1 {} = {}".format(args.train_language, result['macro f1']))
               f1 = result['macro f1']
@@ -879,6 +922,9 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
               model_to_save.save_pretrained(output_dir)
               tokenizer.save_pretrained(output_dir)
 
+              if args.tsnan:
+                torch.save(tsnan_model.state_dict(), os.path.join(output_dir, "tsnan_model.pt"))
+
               torch.save(args, os.path.join(output_dir, "training_args.bin"))
               logger.info("Saving model checkpoint to %s", output_dir)
 
@@ -895,6 +941,9 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
             )  # Take care of distributed/parallel training
             model_to_save.save_pretrained(output_dir)
             tokenizer.save_pretrained(output_dir)
+
+            if args.tsnan:
+              torch.save(tsnan_model.state_dict(), os.path.join(output_dir, "tsnan_model.pt"))
 
             torch.save(args, os.path.join(output_dir, "training_args.bin"))
             logger.info("Saving model checkpoint to %s", output_dir)
@@ -916,7 +965,7 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
   return global_step, tr_loss / global_step, best_score, best_checkpoint
 
 
-def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True):
+def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en', lang2id=None, prefix="", output_file=None, output_only_prediction=True, output_gold=False, tsnan_model=None):
   """Evalute the model."""
 
   model.eval()
@@ -941,6 +990,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         elif ds.startswith('xstance_'):
           lang = ds.split('_')[-1]
           processor = PROCESSORS[args.task_name]['xstance'](lang)
+        elif ds.startswith('zh_'):
+          act_ds = ds.split('_')[-1]
+          processor = PROCESSORS[args.task_name]['zh'](act_ds)
         else:
           processor = PROCESSORS[args.task_name][ds]()
         labels_list.extend(processor.get_labels())
@@ -956,6 +1008,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       elif dataset.startswith('xstance_'):
         lang = dataset.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
+      elif dataset.startswith('zh_'):
+        act_ds = dataset.split('_')[-1]
+        processor = PROCESSORS['stance']['zh'](act_ds)
       else:
         processor = PROCESSORS[args.task_name][dataset]()
       labels_list.extend(processor.get_labels())
@@ -999,6 +1054,12 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         outputs = model(**inputs, output_hidden_states=True)
         logits = outputs['hidden_states'][-1]
 
+        if args.tsnan:
+          topics_mask = get_mask(tokenizer, batch_topics)
+          topics_embed = get_embed(model, batch_topics)
+
+          logits = tsnan_model(topic_emb=topics_embed, topic_mask=topics_mask, text_emb=logits, text_mask=batch[1])
+
         tmp_eval_loss = compute_loss(model, logits, batch[3], batch_shifts, batch_ends)
         eval_loss += tmp_eval_loss.mean().item()
 
@@ -1040,6 +1101,8 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
           l = labels_list[int(l)]
           if output_only_prediction:
             fout.write(str(p) + '\n')
+          elif not output_gold:
+            fout.write('{}\t{}\n'.format(p, s))
           else:
             fout.write('{}\t{}\t{}\n'.format(p, l, s))
 
@@ -1072,6 +1135,9 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   elif dataset.startswith('xstance_'):
     lang = dataset.split('_')[-1]
     processor = PROCESSORS[task]['xstance'](lang)
+  elif dataset.startswith('zh_'):
+    act_ds = dataset.split('_')[-1]
+    processor = PROCESSORS[task]['zh'](act_ds)
   else:
     processor = PROCESSORS[task][dataset]()
   n_labels = len(processor.get_labels())
@@ -1564,6 +1630,8 @@ def main():
   parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the test set.")
   parser.add_argument("--do_predict", action="store_true", help="Whether to run prediction.")
   parser.add_argument("--do_predict_dev", action="store_true", help="Whether to run prediction.")
+  parser.add_argument("--output_only_prediction", action="store_true", help="Do we omit the input during predictions")
+  parser.add_argument("--output_gold", action="store_true", help="Do we output gold during predictions")
   parser.add_argument("--init_checkpoint", type=str, default=None, help="initial checkpoint for predicting the dev set")
   parser.add_argument(
     "--evaluate_during_training", action="store_true", help="Run evaluation during training at each logging step."
@@ -1595,6 +1663,8 @@ def main():
   parser.add_argument('--use_embed_dotproduct', action='store_true', help='use the whole embedding model to compute dot product')
   parser.add_argument('--lang_discrim', action='store_true', help='Whether to add a language discriminator module')
   parser.add_argument('--ld_dataset', type=str, help='dataset for lang discriminator')
+  parser.add_argument('--tsnan', action='store_true', help='Use the TSNAN model')
+  parser.add_argument('--block_tsnan_topic', action='store_true', help='Block direct back-propagation into topic embeddings')
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1826,6 +1896,9 @@ def main():
       elif train_ds.startswith('xstance_'):
         lang = train_ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
+      elif train_ds.startswith('zh_'):
+        real_ds = train_ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['zh'](real_ds)
       else:
         processor = PROCESSORS[args.task_name][train_ds]()
       n_labels = len(processor.get_labels())
@@ -1917,7 +1990,12 @@ def main():
 
       model = model_class.from_pretrained(checkpoint)
       model.to(args.device)
-      result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=prefix)
+      if args.tsnan:
+        tsnan_model = tsnan.HalfTSNAN(model.config.hidden_size, model.config.hidden_size, model.config.hidden_size).to(args.device)
+        tsnan_model.load_state_dict(torch.load(os.path.join(checkpoint, 'tsnan_model.pt')))
+      else:
+        tsnan_model = None
+      result = evaluate(args, model, tokenizer, split='dev', dataset=args.train_dataset, language=args.train_language, lang2id=lang2id, prefix=prefix, tsnan_model=tsnan_model)
       if result['acc'] > best_score:
         best_checkpoint = checkpoint
         best_score = result['acc']
@@ -1936,13 +2014,18 @@ def main():
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path if args.model_name_or_path else best_checkpoint, do_lower_case=args.do_lower_case)
     model = model_class.from_pretrained(best_checkpoint)
     model.to(args.device)
+    if args.tsnan:
+      tsnan_model = tsnan.HalfTSNAN(model.config.hidden_size, model.config.hidden_size, model.config.hidden_size).to(args.device)
+      tsnan_model.load_state_dict(torch.load(os.path.join(checkpoint, 'tsnan_model.pt')))
+    else:
+      tsnan_model = None
     output_predict_file = os.path.join(args.output_dir, args.test_split + '_results.txt')
     total = total_correct = 0.0
     with open(output_predict_file, 'a') as writer:
       writer.write('======= Predict using the model from {} for {}:\n'.format(best_checkpoint, args.test_split))
       for language, ds in zip(args.predict_languages, args.predict_datasets):
         output_file = os.path.join(args.output_dir, 'test-{}.tsv'.format(language))
-        result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file)
+        result = evaluate(args, model, tokenizer, split=args.test_split, dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=args.output_only_prediction, output_gold=args.output_gold, tsnan_model=tsnan_model)
         writer.write('{}={}\n'.format(language, result['acc']))
         logger.info('{}={}'.format(language, result['acc']))
         total += result['num']
@@ -1953,13 +2036,18 @@ def main():
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path if args.model_name_or_path else best_checkpoint, do_lower_case=args.do_lower_case)
     model = model_class.from_pretrained(best_checkpoint)
     model.to(args.device)
+    if args.tsnan:
+      tsnan_model = tsnan.HalfTSNAN(model.config.hidden_size, model.config.hidden_size, model.config.hidden_size).to(args.device)
+      tsnan_model.load_state_dict(torch.load(os.path.join(checkpoint, 'tsnan_model.pt')))
+    else:
+      tsnan_model = None
     output_predict_file = os.path.join(args.output_dir, 'dev_results')
     total = total_correct = 0.0
     with open(output_predict_file, 'w') as writer:
       writer.write('======= Predict using the model from {}:\n'.format(args.init_checkpoint))
       for language, ds in zip(args.predict_languages, args.predict_datasets):
         output_file = os.path.join(args.output_dir, 'dev-{}.tsv'.format(language))
-        result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=False)
+        result = evaluate(args, model, tokenizer, split='dev', dataset=ds, language=language, lang2id=lang2id, prefix='best_checkpoint', output_file=output_file, output_only_prediction=False, output_gold=True, tsnan_model=tsnan_model)
         writer.write('{}={}\n'.format(language, result['acc']))
         total += result['num']
         total_correct += result['correct']

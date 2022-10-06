@@ -31,6 +31,7 @@ headers = [
     'embed_dotproduct',
     'lang_discrim',
     'ld_dataset',
+    'tsnan',
     'per_gpu_train_batch_size',
     'learning_rate',
     'weight_decay',
@@ -84,6 +85,10 @@ def get_result(folder, dataset, df, hashes):
         'num_train_epochs': train_args.num_train_epochs,
         'dir': folder,
     }
+    try:
+        output_row['tsnan'] = train_args.tsnan
+    except AttributeError:
+        output_row['tsnan'] = None
 
     hash_val = hashlib.sha256(str(output_row.values()).encode()).hexdigest()
     output_row['hash'] = hash_val
