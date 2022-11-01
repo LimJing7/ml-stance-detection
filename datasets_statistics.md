@@ -55,6 +55,15 @@ Perspectrum splits are found from the mdl repo and topics are shared
 | Dev   |    1024    |      0     |   1047   |       0      |
 | Test  |    1302    |      0     |   1471   |       0      |
 
+### SCD
+SCD splits are found from the mdl repo w/o overlap in topics between the 3 sets
+
+|       | Against |  For |
+|-------|:-------:|:----:|
+| Train |   1326  | 1925 |
+| Dev   |   181   |  443 |
+| Test  |   438   |  526 |
+
 ### Semeval 2016 task 6
 Semeval 2016 task 6 splits are found from the mdl repo and topics are shared
 
@@ -63,6 +72,15 @@ Semeval 2016 task 6 splits are found from the mdl repo and topics are shared
 | Train |   1191  |     657    |    649   |       0      |
 | Dev   |   204   |     109    |    104   |       0      |
 | Test  |   715   |     230    |    304   |       0      |
+
+### Semeval 2019 task 7
+Semeval 2019 task 7 splits are found from the mdl repo and there are no topics
+
+|       | Support | Deny | Query | Comment |
+|-------|:-------:|:----:|:-----:|:-------:|
+| Train |   925   |  378 |  395  |   3519  |
+| Dev   |   102   |  82  |  120  |   1181  |
+| Test  |   157   |  101 |   93  |   1476  |
 
 ### Snopes
 Snopes splits are found from the mdl repo
@@ -101,6 +119,17 @@ Vast splits are found from [zero-shot-stance](https://github.com/emilyallaway/ze
 | Train | 5595 |   2555  | 5327 |      0       |
 | Dev   |  684 |   697   |  681 |      0       |
 | Test  | 1018 |   1044  |  944 |      0       |
+
+### WTWT
+WTWT splits are found from [Cross-Domain Label-Adaptive Stance Detection](https://arxiv.org/pdf/2104.07467.pdf)
+
+|       | Comment | Refute | Support | Unrelated |
+|-------|:-------:|:------:|:-------:|:---------:|
+| Train |   8825  |  2761  |   3863  |   7550    |
+| Dev   |   2145  |   722  |   829   |   2435    |
+| Test  |   6887  |   325  |   1215  |   6019    |
+
+
 
 ## Non-English
 
