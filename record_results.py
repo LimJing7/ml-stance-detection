@@ -42,9 +42,24 @@ headers = [
     'nlpcc_f1',
     'comb_nlpcc_f1',
     'tnlpcc_f1',
+    'nusax_acehnese_f1',
+    'nusax_balinese_f1',
+    'nusax_banjarese_f1',
+    'nusax_buginese_f1',
+    'nusax_english_f1',
+    'nusax_indonesian_f1',
+    'nusax_javanese_f1',
+    'nusax_madurese_f1',
+    'nusax_minangkabau_f1',
+    'nusax_ngaju_f1',
+    'nusax_sudanese_f1',
+    'nusax_toba_batak_f1',
     'dir',
     'hash'
 ]
+
+nusax_languages = ['acehnese', 'balinese', 'banjarese', 'buginese', 'english', 'indonesian', 'javanese', 'madurese', 'minangkabau', 'ngaju', 'sudanese', 'toba_batak']
+nusax_ds = [f'nusax_{lang}' for lang in nusax_languages]
 
 
 def get_result(folder, dataset, df, hashes):
@@ -130,7 +145,7 @@ def main():
     )
     parser.add_argument(
         '--eval_dataset',
-        choices=['nlpcc', 'tnlpcc', 'comb_nlpcc', 'xstance_de', 'efra', 'rita', 'trans_nlpcc', 'trans_comb_nlpcc'],
+        choices=['nlpcc', 'tnlpcc', 'comb_nlpcc', 'xstance_de', 'efra', 'rita', 'trans_nlpcc', 'trans_comb_nlpcc', *nusax_ds],
         help='which dataset\'s score',
         required=True,
     )
