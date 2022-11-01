@@ -34,6 +34,14 @@ class ArgMinProcessor(DataProcessor):
     label_map = {0: 'argument against',
                  1: 'argument for'}
     language = 'en'
+    contexts_dict = {'abortion': 'Abortion is the termination of a pregnancy by removal or expulsion of an embryo or fetus. Opinions of abortion may be about fetal rights, governmental authority, and women\'s rights',
+                     'cloning': 'Cloning is the process of producing individual organisms with identical or virtually identical DNA, either by natural or artificial means',
+                     'marijuana legalization': 'Marijuana is a psychoactive drug from the Cannabis plant; it has been used as a drug for both recreational and entheogenic purposes and in various traditional medicines for centuries',
+                     'minimum wage': 'Minimum wage is the lowest remuneration that employers can legally pay their employees',
+                     'nuclear energy': 'Nuclear energy is the use of nuclear reactions to produce electricity',
+                     'death penalty': 'Death penalty is a state-sanctioned practice of killing a person as a punishment for a crime',
+                     'gun control': 'Advocates for gun control support increased regulation of gun ownership; whereas advocates for gun rights oppose increased restriction of gun ownership',
+                     'school uniforms': 'Uniforms worn by students of an academic institution. Debate surrounds student safety, individuality, affordability among other issues'}
 
     def __init__(self):
         pass
@@ -48,8 +56,9 @@ class ArgMinProcessor(DataProcessor):
         topic = line['premise']
         text = line['hypothesis']
         label = ArgMinProcessor.label_map[line['label']]
-        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
-        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+        context = ArgMinProcessor.contexts_dict[topic]
+        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str) and isinstance(context, str)
+        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label, context=context))
       return examples
 
     def get_train_examples(self, data_dir):

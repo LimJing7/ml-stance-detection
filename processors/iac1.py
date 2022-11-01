@@ -35,6 +35,16 @@ class IAC1Processor(DataProcessor):
                  2: 'other',
                  1: 'pro'}
     language = 'en'
+    contexts_dict = {'abortion': 'Abortion is the termination of a pregnancy by removal or expulsion of an embryo or fetus. Opinions of abortion may be about fetal rights, governmental authority, and women\'s rights',
+                     'death penalty': 'Death penalty is a state-sanctioned practice of killing a person as a punishment for a crime',
+                     'evolution': 'Evolution is change in the heritable characteristics of biological populations over successive generations',
+                     'gay marriage': 'Gay marriage is the marriage of two people of the same sex or gender; debate occurs based on social viewpoints, majority rules, religious convictions, economic arguments, health-related concerns, and a variety of other issues.',
+                     'gun control': 'Advocates for gun control support increased regulation of gun ownership; whereas advocates for gun rights oppose increased restriction of gun ownership',
+                     'healthcare': 'The debate of healthcare centers on Hillary Clinton\'s plan for healtcare in the US',
+                     'climate change': 'In common usage, climate change describes global warming; climate change has been strongly affected by climate change denial and misinformation',
+                     'communism vs capitalism': 'Communism vs capitalism debate is a battle between two extreme socioeconomic theories; communism is social system in which country\'s trade and industry are controlled by the community and the share of each individual relies on his ability and needs; whereas capitalism is an economic system in which the trade and industry of the economy is owned and controlled by private individuals, to make profit',
+                     'existence of god': 'The existence of God is a subject of debate in theology, philosophy of religion and popular culture',
+                     'marijuana legalization': 'Marijuana is a psychoactive drug from the Cannabis plant; it has been used as a drug for both recreational and entheogenic purposes and in various traditional medicines for centuries'}
 
     def __init__(self):
         pass
@@ -49,8 +59,9 @@ class IAC1Processor(DataProcessor):
         topic = line['premise']
         text = line['hypothesis']
         label = IAC1Processor.label_map[line['label']]
-        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
-        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+        context = IAC1Processor.contexts_dict[topic]
+        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str) and isinstance(context, str)
+        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label, context=context))
       return examples
 
     def get_train_examples(self, data_dir):

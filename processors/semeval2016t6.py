@@ -35,6 +35,11 @@ class SemEval2016t6Processor(DataProcessor):
                  2: 'none',
                  1: 'in favour'}
     language = 'en'
+    contexts_dict = {'Atheism': 'Atheism, in the broadest sense, is an absence of belief in the existence of deities',
+                     'Climate Change is a Real Concern': 'In common usage, climate change describes global warming; climate change has been strongly affected by climate change denial and misinformation',
+                     'Feminist Movement': 'Feminist movement refers to a series of social movements and political campaigns for radical and liberal reforms on women\'s issues created by the inequality between men and women; issues include women\'s liberation, reproductive rights, domestic violence, maternity leave, equal pay, women\'s suffrage, sexual harassment, and sexual violence',
+                     'Hillary Clinton': 'Hillary Clinton is an American politician, diplomat, and former lawyer who served as the 67th United States secretary of state from 2009 to 2013 and the Democratic Party nominee against Republican Party\'s Donald Trump in the 2016 presidential election',
+                     'Legalization of Abortion': 'Abortion is the termination of a pregnancy by removal or expulsion of an embryo or fetus. Opinions of abortion may be about fetal rights, governmental authority, and women\'s rights'}
 
     def __init__(self):
         pass
@@ -49,8 +54,9 @@ class SemEval2016t6Processor(DataProcessor):
         topic = line['premise']
         text = line['hypothesis']
         label = SemEval2016t6Processor.label_map[line['label']]
-        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
-        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
+        context = SemEval2016t6Processor.contexts_dict[topic]
+        assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str) and isinstance(context, str)
+        examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label, context=context))
       return examples
 
     def get_train_examples(self, data_dir):

@@ -87,7 +87,9 @@ from processors.ibmcs import IBMCSProcessor
 from processors.nlpcc import NLPCCProcessor
 from processors.perspectrum import PerspectrumProcessor
 from processors.rita import RItaProcessor
+from processors.scd import SCDProcessor
 from processors.semeval2016t6 import SemEval2016t6Processor
+from processors.semeval2019t7 import SemEval2019t7Processor
 from processors.sentistance_enwiki import SentiStanceEnWikiProcessor
 from processors.sentistance_mwiki import SentiStanceMWikiProcessor
 from processors.snopes import SnopesProcessor
@@ -98,6 +100,10 @@ from processors.twitter2017 import Twitter2017Processor
 from processors.vast import VASTProcessor
 from processors.xstance import XStanceProcessor
 from processors.tnlpcc import tNLPCCProcessor
+from processors.wtwt import WtwtProcessor
+from processors.nusax import NusaXProcessor
+from processors.twitter_iphonese import TwitterIPhoneSEProcessor
+from processors.maj_twitter_iphonese import MajTwitterIPhoneSEProcessor
 
 from processors.mldoc import MLDocProcessor
 from processors.xnli_ld import XNLILDProcessor
@@ -155,7 +161,9 @@ PROCESSORS = {
              'nlpcc': NLPCCProcessor,
              'perspectrum': PerspectrumProcessor,
              'rita': RItaProcessor,
+             'scd': SCDProcessor,
              'semeval2016t6': SemEval2016t6Processor,
+             'semeval2019t7': SemEval2019t7Processor,
              'snopes': SnopesProcessor,
              'sentistance_enwiki': SentiStanceEnWikiProcessor,
              'sentistance_mwiki': SentiStanceMWikiProcessor,
@@ -164,11 +172,13 @@ PROCESSORS = {
              'twitter2015': Twitter2015Processor,
              'twitter2017': Twitter2017Processor,
              'vast': VASTProcessor,
+             'wtwt': WtwtProcessor,
              'xstance': XStanceProcessor,
              'tnlpcc': tNLPCCProcessor,
              'zh': TransStanceProcessor,
-             'shanmugam': ShanmugamProcessor,
-             'tentera': TenteraProcessor},
+             'nusax': NusaXProcessor,
+             'twitter_iphonese': TwitterIPhoneSEProcessor,
+             'maj_twitter_iphonese': MajTwitterIPhoneSEProcessor},
   'zh_stance': {'arc': ARCZhStanceProcessor,
                 'argmin': ArgMinZhStanceProcessor,
                 'fnc1': FNC1ZhStanceProcessor,
@@ -217,6 +227,9 @@ def get_compute_preds(args, tokenizer, model, datasets):
     if ds.startswith('comb_nlpcc_'):
       count = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    elif ds.startswith('nusax_'):
+      lang = '_'.join(ds.split('_')[1:])
+      processor = PROCESSORS[args.task_name]['nusax'](lang)
     elif ds.startswith('xstance_'):
       lang = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -254,6 +267,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
     if ds.startswith('comb_nlpcc_'):
       count = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name][ds](count, args.seed)
+    elif ds.startswith('nusax_'):
+      lang = '_'.join(ds.split('_')[1:])
+      processor = PROCESSORS[args.task_name]['nusax'](lang)
     elif ds.startswith('xstance_'):
       lang = ds.split('_')[-1]
       processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -273,6 +289,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       if ds.startswith('comb_nlpcc_'):
         count = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      elif ds.startswith('nusax_'):
+        lang = '_'.join(ds.split('_')[1:])
+        processor = PROCESSORS[args.task_name]['nusax'](lang)
       elif ds.startswith('xstance_'):
         lang = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -293,6 +312,9 @@ def get_compute_loss(args, tokenizer, model, datasets):
       if ds.startswith('comb_nlpcc_'):
         count = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][ds](count, args.seed)
+      elif ds.startswith('nusax_'):
+        lang = '_'.join(ds.split('_')[1:])
+        processor = PROCESSORS[args.task_name]['nusax'](lang)
       elif ds.startswith('xstance_'):
         lang = ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -987,6 +1009,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         if ds.startswith('comb_nlpcc_'):
           count = ds.split('_')[-1]
           processor = PROCESSORS[args.task_name][ds](count, args.seed)
+        elif ds.startswith('nusax_'):
+          lang = '_'.join(ds.split('_')[1:])
+          processor = PROCESSORS[args.task_name]['nusax'](lang)
         elif ds.startswith('xstance_'):
           lang = ds.split('_')[-1]
           processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -1005,6 +1030,9 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       if dataset.startswith('comb_nlpcc_'):
         count = dataset.split('_')[-1]
         processor = PROCESSORS[args.task_name][dataset](count, args.seed)
+      elif dataset.startswith('nusax_'):
+        lang = '_'.join(dataset.split('_')[1:])
+        processor = PROCESSORS[args.task_name]['nusax'](lang)
       elif dataset.startswith('xstance_'):
         lang = dataset.split('_')[-1]
         processor = PROCESSORS[args.task_name]['xstance'](lang)
@@ -1132,6 +1160,9 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   if dataset.startswith('comb_nlpcc_'):
     count = dataset.split('_')[-1]
     processor = PROCESSORS[task][dataset](count, args.seed)
+  elif dataset.startswith('nusax_'):
+    lang = '_'.join(dataset.split('_')[1:])
+    processor = PROCESSORS[args.task_name]['nusax'](lang)
   elif dataset.startswith('xstance_'):
     lang = dataset.split('_')[-1]
     processor = PROCESSORS[task]['xstance'](lang)
@@ -1145,6 +1176,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
   output_mode = "classification"
   # Load data features from cache or dataset file
   lc = '_lc' if args.do_lower_case else ''
+  context = '_context' if args.context else ''
   if evaluate:
     mlm = 'no_mlm'
     da = ''
@@ -1162,7 +1194,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
 
   cached_features_file = os.path.join(
     args.data_dir,
-    f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_{task}_{args.variant}_{language}_{mlm}{lc}{da}",
+    f"cached_{dataset}_{split}_{cache_model_name_or_path}_{args.max_seq_length}_{task}_{args.variant}_{language}_{mlm}{lc}{da}{context}",
   )
   if os.path.exists(cached_features_file) and not args.overwrite_cache and not args.ignore_cache:
     logger.info("Loading features from cached file %s", cached_features_file)
@@ -1191,6 +1223,7 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
       tokenizer,
       task,
       variant=args.variant,
+      context=args.context,
       label_list=label_list,
       max_length=args.max_seq_length,
       output_mode=output_mode,
@@ -1665,6 +1698,7 @@ def main():
   parser.add_argument('--ld_dataset', type=str, help='dataset for lang discriminator')
   parser.add_argument('--tsnan', action='store_true', help='Use the TSNAN model')
   parser.add_argument('--block_tsnan_topic', action='store_true', help='Block direct back-propagation into topic embeddings')
+  parser.add_argument('--context', action='store_true', help='add context to model')
   parser.add_argument(
     "--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model."
   )
@@ -1849,16 +1883,21 @@ def main():
 
   args.train_language = []
   for train_ds in args.train_dataset:
-    try:
-      lang = PROCESSORS[args.task_name][train_ds].language
-    except KeyError:
-      lang = PROCESSORS[args.task_name]['_'.join(train_ds.split('_')[:-1])].language
+    if train_ds.startswith('nusax_'):
+      lang = '_'.join(train_ds.split('_')[1:])
+    else:
+      try:
+        lang = PROCESSORS[args.task_name][train_ds].language
+      except KeyError:
+        lang = PROCESSORS[args.task_name]['_'.join(train_ds.split('_')[:-1])].language
     args.train_language.append(lang)
 
   args.predict_languages = []
   for pred_ds in args.predict_datasets:
     if pred_ds.startswith('xstance'):
       lang = pred_ds.split('_')[-1]
+    elif pred_ds.startswith('nusax'):
+      lang = '_'.join(pred_ds.split('_')[1:])
     else:
       lang = PROCESSORS[args.task_name][pred_ds].language
     args.predict_languages.append(lang)
@@ -1893,9 +1932,12 @@ def main():
       if train_ds.startswith('comb_nlpcc_'):
         count = train_ds.split('_')[-1]
         processor = PROCESSORS[args.task_name][train_ds](count, args.seed)
+      elif train_ds.startswith('nusax_'):
+        nusa_lang = '_'.join(train_ds.split('_')[1:])
+        processor = PROCESSORS[args.task_name]['nusax'](nusa_lang)
       elif train_ds.startswith('xstance_'):
-        lang = train_ds.split('_')[-1]
-        processor = PROCESSORS[args.task_name]['xstance'](lang)
+        xstance_lang = train_ds.split('_')[-1]
+        processor = PROCESSORS[args.task_name]['xstance'](xstance_lang)
       elif train_ds.startswith('zh_'):
         real_ds = train_ds.split('_')[-1]
         processor = PROCESSORS[args.task_name]['zh'](real_ds)
