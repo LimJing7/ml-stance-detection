@@ -1,6 +1,6 @@
 import pandas as pd
 
-df = pd.read_csv('twitter_iphonese_en.csv', lineterminator='\n')
+df = pd.read_csv('twitter_iphonese_zh.csv', lineterminator='\n')
 
 existing = set()
 to_keep = []
@@ -15,4 +15,4 @@ for idx, row in df[::-1].iterrows():
 
 filtered_df = df[::-1][to_keep]
 
-filtered_df.to_csv('deduped_twitter_iphonese_en.csv')
+filtered_df.to_csv('deduped_twitter_iphonese_zh.csv')

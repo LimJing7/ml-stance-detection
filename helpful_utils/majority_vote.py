@@ -1,7 +1,7 @@
 import pandas as pd
-predicted_files =['../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-variant_3-attempt_r3/checkpoint-best/test-en.tsv',
-                  '../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-ld_mldoc-extra_mlm-amazonzh-variant_3-attempt_r4/checkpoint-best/test-en.tsv',
-                  '../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-variant_3-large_model-attempt_r3/checkpoint-best/test-en.tsv']
+predicted_files =['../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-variant_3-attempt_r3/checkpoint-best/test-zh.tsv',
+                  '../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-ld_mldoc-extra_mlm-amazonzh-variant_3-attempt_r4/checkpoint-best/test-zh.tsv',
+                  '../stance_expts/ml-stance-11_en-no_mlm-2_neg-rs_rp-variant_3-large_model-attempt_r3/checkpoint-best/test-zh.tsv']
 
 pred_dfs = [pd.read_csv(i, names=['pred', 'text'], index_col=False, sep='\t') for i in predicted_files]
 
@@ -25,5 +25,5 @@ final_df = pred_dfs[0]
 final_df['pred'] = majority
 final_df['text'] = text
 final_df = final_df[final_df['pred'] != 'drop']
-final_df.to_csv('majority_voted_twitter_iphonese.csv')
+final_df.to_csv('majority_voted_twitter_iphonese_zh.csv')
 print(final_df.shape)
