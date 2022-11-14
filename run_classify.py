@@ -102,8 +102,12 @@ from processors.xstance import XStanceProcessor
 from processors.tnlpcc import tNLPCCProcessor
 from processors.wtwt import WtwtProcessor
 from processors.nusax import NusaXProcessor
+from processors.twitter_efra import TwitterEFraProcessor
 from processors.twitter_iphonese import TwitterIPhoneSEProcessor
+from processors.twitter_iphonese_zh import TwitterIPhoneSEZhProcessor
+from processors.maj_twitter_efra import MajTwitterEFraProcessor
 from processors.maj_twitter_iphonese import MajTwitterIPhoneSEProcessor
+from processors.maj_twitter_iphonese_zh import MajTwitterIPhoneSEZhProcessor
 
 from processors.mldoc import MLDocProcessor
 from processors.xnli_ld import XNLILDProcessor
@@ -177,8 +181,12 @@ PROCESSORS = {
              'tnlpcc': tNLPCCProcessor,
              'zh': TransStanceProcessor,
              'nusax': NusaXProcessor,
+             'twitter_efra': TwitterEFraProcessor,
              'twitter_iphonese': TwitterIPhoneSEProcessor,
-             'maj_twitter_iphonese': MajTwitterIPhoneSEProcessor},
+             'twitter_iphonese_zh': TwitterIPhoneSEZhProcessor,
+             'maj_twitter_efra': MajTwitterEFraProcessor,
+             'maj_twitter_iphonese': MajTwitterIPhoneSEProcessor,
+             'maj_twitter_iphonese_zh': MajTwitterIPhoneSEZhProcessor},
   'zh_stance': {'arc': ARCZhStanceProcessor,
                 'argmin': ArgMinZhStanceProcessor,
                 'fnc1': FNC1ZhStanceProcessor,
