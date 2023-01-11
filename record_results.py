@@ -32,6 +32,10 @@ headers = [
     'lang_discrim',
     'ld_dataset',
     'tsnan',
+    'sam',
+    'rho',
+    'ascent_batch_size',
+    'adaptive',
     'per_gpu_train_batch_size',
     'learning_rate',
     'weight_decay',
@@ -104,6 +108,22 @@ def get_result(folder, dataset, df, hashes):
         output_row['tsnan'] = train_args.tsnan
     except AttributeError:
         output_row['tsnan'] = None
+    try:
+        output_row['sam'] = train_args.sam
+    except AttributeError:
+        output_row['sam'] = False
+    try:
+        output_row['rho'] = train_args.rho
+    except AttributeError:
+        output_row['rho'] = None
+    try:
+        output_row['ascent_batch_size'] = train_args.ascent_batch_size
+    except AttributeError:
+        output_row['ascent_batch_size'] = None
+    try:
+        output_row['adaptive'] = train_args.adaptive
+    except AttributeError:
+        output_row['adaptive'] = None
 
     hash_val = hashlib.sha256(str(output_row.values()).encode()).hexdigest()
     output_row['hash'] = hash_val
