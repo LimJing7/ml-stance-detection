@@ -47,10 +47,7 @@ class RItaProcessor(DataProcessor):
         guid = "%s-%s" % (split, i)
         topic = 'Referendum costituzionale'
         text = line.Tweet
-        if split == 'test' and len(line) != 4:
-          label = "neutral"
-        else:
-          label = RItaProcessor.label_map[line.Stance]
+        label = RItaProcessor.label_map[line.Stance]
         assert isinstance(topic, str) and isinstance(text, str) and isinstance(label, str)
         examples.append(StanceExample(guid=guid, topic=topic, text=text, label=label))
       return examples
