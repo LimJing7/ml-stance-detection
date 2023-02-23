@@ -66,7 +66,7 @@ nusax_languages = ['acehnese', 'balinese', 'banjarese', 'buginese', 'english', '
 nusax_ds = [f'nusax_{lang}' for lang in nusax_languages]
 
 
-def get_result(folder, dataset, df, hashes):
+def get_result(folder, dataset, df, hashes, test=False):
     train_args = torch.load(open(os.path.join(folder, 'training_args.bin'), 'rb'))
 
     output_row = {
@@ -128,12 +128,20 @@ def get_result(folder, dataset, df, hashes):
     hash_val = hashlib.sha256(str(output_row.values()).encode()).hexdigest()
     output_row['hash'] = hash_val
 
-    with open(os.path.join(folder, 'eval_results')) as f:
-        for line in f:
-            if line.startswith('macro f1'):
-                f1 = float(line.strip().split('=')[1])
+    if test:
+        with open(os.path.join(folder, 'test_results.txt')) as f:
+            for line in f:
+                if line.startswith('macro f1'):
+                    f1 = float(line.strip().split('=')[1])
 
-    var_f1 = f'{dataset}_f1'
+        var_f1 = f'{dataset}_test_f1'
+    else:
+        with open(os.path.join(folder, 'eval_results')) as f:
+            for line in f:
+                if line.startswith('macro f1'):
+                    f1 = float(line.strip().split('=')[1])
+
+        var_f1 = f'{dataset}_f1'
 
     if hash_val in hashes:
         df.loc[df['hash']==hash_val, var_f1] = f1
@@ -163,11 +171,16 @@ def main():
         default='big_results.xlsx',
         help='excel file of results'
     )
-    parser.add_argument(
+    dataset_grp = parser.add_mutually_exclusive_group(required=True)
+    dataset_grp.add_argument(
         '--eval_dataset',
         choices=['nlpcc', 'tnlpcc', 'comb_nlpcc', 'xstance_de', 'efra', 'rita', 'trans_nlpcc', 'trans_comb_nlpcc', *nusax_ds],
-        help='which dataset\'s score',
-        required=True,
+        help='which eval dataset\'s score',
+    )
+    dataset_grp.add_argument(
+        '--test_dataset',
+        choices=['nlpcc', 'tnlpcc', 'comb_nlpcc', 'xstance_de', 'efra', 'rita', 'trans_nlpcc', 'trans_comb_nlpcc', *nusax_ds],
+        help='which pred dataset\'s score',
     )
 
     args = parser.parse_args()
@@ -179,9 +192,16 @@ def main():
 
     hashes = set(data_df['hash'])
 
+    if args.eval_dataset is None:
+        dataset = args.test_dataset
+        test = True
+    else:
+        dataset = args.eval_dataset
+        test = False
+
     results = []
     for folder in args.folders:
-        result_dict = get_result(folder, args.eval_dataset, data_df, hashes)
+        result_dict = get_result(folder, dataset, data_df, hashes, test=test)
         if result_dict is not None:
             results.append(result_dict)
     results_df = pd.DataFrame(results)
