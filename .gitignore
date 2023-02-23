@@ -137,3 +137,7 @@ runs/
 # Secrets
 reddit_secrets.py
 twitter_secrets.py
+
+# twitter_data
+twitter_data/
+*.csv
