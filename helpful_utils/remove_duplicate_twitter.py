@@ -1,12 +1,13 @@
 import pandas as pd
+import tqdm
 
-df = pd.read_csv('twitter_iphonese_zh.csv', lineterminator='\n')
+df = pd.read_csv('twitter_trans_tfidf.csv', lineterminator='\n')
 
 existing = set()
 to_keep = []
 
 ## flip the order to keep oldest iteration
-for idx, row in df[::-1].iterrows():
+for idx, row in tqdm.tqdm(df[::-1].iterrows()):
     if row['text'] in existing:
         to_keep.append(False)
     else:
@@ -15,4 +16,4 @@ for idx, row in df[::-1].iterrows():
 
 filtered_df = df[::-1][to_keep]
 
-filtered_df.to_csv('deduped_twitter_iphonese_zh.csv')
+filtered_df.to_csv('deduped_twitter_trans_tfidf.csv', index=False)

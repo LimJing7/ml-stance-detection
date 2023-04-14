@@ -41,7 +41,10 @@ for i, loc in enumerate(locations):
         for checkpt_type in checkpt_types:
             for repeat in range(5):
                 full = f'{prefix[:-1]}{repeat}/{checkpt_type}'
-                m.append(locations.index(full))
+                try:
+                    m.append(locations.index(full))
+                except ValueError:
+                    pass
 
 m = [i+args.start_idx for i in m]
 print(m)

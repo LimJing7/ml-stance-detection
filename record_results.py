@@ -1,9 +1,14 @@
 import argparse
+import fcntl
 import hashlib
+import logging
 import os
 import pandas as pd
 import pickle
 import torch
+
+
+logger = logging.getLogger(__name__)
 
 headers = [
     'model_base',
@@ -162,6 +167,11 @@ def main():
         help="Train dataset(s)."
     )
     parser.add_argument(
+        '--lock_file',
+        default='big_results.lock',
+        help='lock file'
+    )
+    parser.add_argument(
         '--output_file',
         default='big_results.pkl',
         help='file where all the results are saved'
@@ -185,10 +195,23 @@ def main():
 
     args = parser.parse_args()
 
+    logging.basicConfig(handlers=[logging.StreamHandler()],
+                        format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt='%m/%d/%Y %H:%M:%S',
+                        level=logging.INFO)
+    logging.info("Input args: %r" % args)
+
+    # lock_fd = open(args.lock_file, 'w')
+    # fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    # lock_fd.write(str(args.folders))
+    # lock_fd.write('\n')
+
     try:
         data_df = pickle.load(open(args.output_file, 'rb'))
     except FileNotFoundError:
         data_df = pd.DataFrame(columns=headers)
+
+    logger.info('DataFrame loaded')
 
     hashes = set(data_df['hash'])
 
@@ -199,6 +222,9 @@ def main():
         dataset = args.eval_dataset
         test = False
 
+    # lock_fd.write(dataset)
+    # lock_fd.write('\n')
+
     results = []
     for folder in args.folders:
         result_dict = get_result(folder, dataset, data_df, hashes, test=test)
@@ -208,11 +234,14 @@ def main():
 
     data_df = pd.concat([data_df, results_df], ignore_index=True)
 
-    print(f'{args.folders=}')
-    print(f'{args.eval_dataset=}')
+    logger.info(f'{args.folders=}')
+    logger.info(f'{dataset=}')
 
     pickle.dump(data_df, open(args.output_file, 'wb'))
     data_df.to_excel(args.excel_file, index=False)
+
+    # fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    # lock_fd.close()
 
 if __name__ == '__main__':
     main()

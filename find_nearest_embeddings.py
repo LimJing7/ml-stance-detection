@@ -47,11 +47,48 @@ class MyDataset(IterableDataset):
         return iter(zip(self.data1, self.data2))
 
 
+def get_nearest(args, centers, tokenizer, model, df):
+    selected = {}
+    centers_list = []
+    for center in sorted(centers):
+        selected[center] = NearestK(centers[center].detach().to(args.device), args.n_points_per_center)
+        centers_list.append(centers[center].detach())
+
+    centers_tensor = torch.stack(centers_list).to(args.device)
+
+    dataset = MyDataset(df['text'], df.index)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size)
+
+    for batch in tqdm.tqdm(dataloader, total=(df.shape[0]//args.batch_size), mininterval=60):
+        text, idx = batch
+        toked = tokenizer(text, return_tensors='pt', padding=True, max_length=512, truncation=True)
+        embs = model(toked['input_ids'].to(args.device), toked['attention_mask'].to(args.device))['pooler_output'].detach()
+        dists = torch.cdist(centers_tensor, embs, p=2)
+        sel_centers = torch.min(dists, axis=0).indices
+        for c_id, center in enumerate(sorted(centers)):
+            sel_dists = dists[c_id, sel_centers == c_id]
+            sel_idx = idx[sel_centers == c_id]
+            selected[center].add_multiple_with_dist(sel_dists.cpu().numpy(), sel_idx.cpu().numpy())
+                # selected[center].add_multiple(embs, idx.cpu().numpy())  ## this version has being deprecated
+        del embs
+
+    all_sel_idx = []
+    for center in selected:
+        print(f'{center}: {len(selected[center].list)}')
+        selected[center].truncate()
+        sel_idx = [i[1] for i in selected[center].list]
+        all_sel_idx.extend(sel_idx)
+
+    print(all_sel_idx)
+
+    sel_df = df[df.index.isin(set(all_sel_idx))]
+    return sel_df
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--center_file')
     parser.add_argument('--n_points_per_center', type=int)
-    parser.add_argument('--tweet_file')
+    parser.add_argument('--tweet_files', nargs='+')
     parser.add_argument('--model_file')
     parser.add_argument('--output_file')
 
@@ -66,39 +103,21 @@ if __name__ == '__main__':
     tokenizer = transformers.XLMRobertaTokenizer.from_pretrained(args.model_file)
     model = transformers.XLMRobertaModel.from_pretrained(args.model_file).to(args.device)
 
-    selected = {}
-    centers_list = []
-    for center in sorted(centers):
-        selected[center] = NearestK(centers[center].detach().to(args.device), args.n_points_per_center)
-        centers_list.append(centers[center].detach())
+    sel_dfs = []
 
-    centers_tensor = torch.stack(centers_list).to(args.device)
+    for idx, tweet_file in enumerate(args.tweet_files):
+        print(f'{idx = }')
 
-    df = pd.read_csv(args.tweet_file, lineterminator='\n')
+        try:
+            sel_df = pd.read_csv(f'{args.output_file}_wip_{idx}', lineterminator='\n')
+        except FileNotFoundError:
+            df = pd.read_csv(tweet_file, lineterminator='\n')
+            sel_df = get_nearest(args, centers, tokenizer, model, df)
+            sel_df.to_csv(f'{args.output_file}_wip_{idx}', index=False)
 
-    dataset = MyDataset(df['text'], df.index)
-    dataloader = DataLoader(dataset, batch_size=args.batch_size)
+        sel_dfs.append(sel_df)
 
-    for batch in tqdm.tqdm(dataloader, total=(df.shape[0]//args.batch_size)):
-        text, idx = batch
-        toked = tokenizer(text, return_tensors='pt', padding=True)
-        embs = model(toked['input_ids'].to(args.device), toked['attention_mask'].to(args.device))['pooler_output'].detach()
-        dists = torch.cdist(centers_tensor, embs, p=2)
-        sel_centers = torch.min(dists, axis=0).indices
-        for c_id, center in enumerate(sorted(centers)):
-            sel_dists = dists[c_id, sel_centers == c_id]
-            sel_idx = idx[sel_centers == c_id]
-            selected[center].add_multiple_with_dist(sel_dists.cpu().numpy(), sel_idx.cpu().numpy())
-            # selected[center].add_multiple(embs, idx.cpu().numpy())  ## this version has being deprecated
-        del embs
+    comb_df = pd.concat(sel_dfs, ignore_index=True)
+    final_df = get_nearest(args, centers, tokenizer, model, comb_df)
 
-    all_sel_idx = []
-    for center in selected:
-        selected[center].truncate()
-        sel_idx = [i[1] for i in selected[center].list]
-        all_sel_idx.extend(sel_idx)
-
-    print(all_sel_idx)
-
-    sel_df = df[df.index.isin(set(all_sel_idx))]
-    sel_df.to_csv(args.output_file, index=False)
+    final_df.to_csv(args.output_file, index=False)

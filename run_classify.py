@@ -19,7 +19,6 @@
 
 import argparse
 import bisect
-from collections import OrderedDict
 import datetime
 import glob
 import logging
@@ -122,6 +121,12 @@ from processors.maj_twitter_iphonese_zh import MajTwitterIPhoneSEZhProcessor
 from processors.maj_twitter_rita import MajTwitterRItaProcessor
 from processors.maj_twitter_tfidf import MajTwitterTfIdfProcessor
 from processors.maj_twitter_xstance_de import MajTwitterXStanceDeProcessor
+from processors.maj_twitter_wiki_cont_emb import MajTwitterWikiContEmbProcessor
+from processors.maj_twitter_wiki_cont_filt_rand import MajTwitterWikiContFiltRandProcessor
+from processors.maj_twitter_wiki_cont_class_filt_rand import MajTwitterWikiContClassFiltRandProcessor
+from processors.maj_twitter_wiki_cont_high_filt import MajTwitterWikiContHighFiltlProcessor
+from processors.maj_twitter_wiki_cont_manual import MajTwitterWikiContManualProcessor
+from processors.maj_twitter_wiki_cont_near_topics import MajTwitterWikiContNearTopicsProcessor
 
 from processors.mldoc import MLDocProcessor
 from processors.xnli_ld import XNLILDProcessor
@@ -234,7 +239,13 @@ PROCESSORS = {
              'maj_twitter_iphonese_zh': MajTwitterIPhoneSEZhProcessor,
              'maj_twitter_rita': MajTwitterRItaProcessor,
              'maj_twitter_tfidf': MajTwitterTfIdfProcessor,
-             'maj_twitter_xstance_de': MajTwitterXStanceDeProcessor},
+             'maj_twitter_xstance_de': MajTwitterXStanceDeProcessor,
+             'maj_twitter_wiki_cont_emb': MajTwitterWikiContEmbProcessor,
+             'maj_twitter_wiki_cont_filt_rand': MajTwitterWikiContFiltRandProcessor,
+             'maj_twitter_wiki_cont_class_filt_rand': MajTwitterWikiContClassFiltRandProcessor,
+             'maj_twitter_wiki_cont_high_filt': MajTwitterWikiContHighFiltlProcessor,
+             'maj_twitter_wiki_cont_manual': MajTwitterWikiContManualProcessor,
+             'maj_twitter_wiki_cont_near_topics': MajTwitterWikiContNearTopicsProcessor},
   'zh_stance': {'arc': ARCZhStanceProcessor,
                 'argmin': ArgMinZhStanceProcessor,
                 'fnc1': FNC1ZhStanceProcessor,
@@ -292,6 +303,25 @@ def get_processor(dataset, taskname, seed):
   elif dataset.startswith('maj_twitter_tfidf_'):
     count = int(dataset.split('_')[-1])
     processor = PROCESSORS[taskname]['maj_twitter_tfidf'](count, seed)
+  elif dataset.startswith('maj_twitter_wiki_cont_filt_rand'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_filt_rand'](count, seed)
+  elif dataset.startswith('maj_twitter_wiki_cont_class_filt_rand'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_class_filt_rand'](count, seed)
+  elif dataset.startswith('maj_twitter_wiki_cont_emb-'):
+    neighbours = int(dataset.split('-')[1])
+    variant = dataset.split('-')[2]
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_emb'](neighbours, variant)
+  elif dataset.startswith('maj_twitter_wiki_cont_high_filt'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_high_filt'](count, seed)
+  elif dataset.startswith('maj_twitter_wiki_cont_manual'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_manual'](count, seed)
+  elif dataset.startswith('maj_twitter_wiki_cont_near_topics'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[taskname]['maj_twitter_wiki_cont_near_topics'](count)
   elif dataset.startswith('nusax_'):
     lang = '_'.join(dataset.split('_')[1:])
     processor = PROCESSORS[taskname]['nusax'](lang)
@@ -307,6 +337,7 @@ def get_processor(dataset, taskname, seed):
   else:
     processor = PROCESSORS[taskname][dataset]()
   return processor
+
 
 def get_compute_preds(args, tokenizer, model, datasets):
   if type(datasets) != list:
@@ -327,12 +358,21 @@ def get_compute_preds(args, tokenizer, model, datasets):
           raise NotImplementedError('Model is not supported')
       embeded_tokens.append(lab_embed)
   LE = torch.stack(embeded_tokens).detach()
-  def compute_preds(preds, shifts, ends):
+  def compute_preds(preds, shifts, ends, keep_only_high=False):
     output = torch.zeros(preds.shape[0], dtype=torch.long)
     scores = (preds @ LE.T)
-    for i, (score, shift, end) in enumerate(zip(scores, shifts, ends)):
-      output[i] = torch.max(score[shift:end], axis=0)[1] + shift
-    return output
+    if keep_only_high:
+      high_mask = torch.zeros(preds.shape[0], dtype=torch.bool)
+      for i, (score, shift, end) in enumerate(zip(scores, shifts, ends)):
+        val, idx = torch.max(score[shift:end], axis=0)
+        if val > args.high_logits_value:
+          high_mask[i] = True
+        output[i] = idx + shift
+        return output, high_mask
+    else:
+      for i, (score, shift, end) in enumerate(zip(scores, shifts, ends)):
+        output[i] = torch.max(score[shift:end], axis=0)[1] + shift
+    return output, None
   return compute_preds
 
 def get_compute_loss(args, tokenizer, model, datasets):
@@ -340,37 +380,7 @@ def get_compute_loss(args, tokenizer, model, datasets):
   if type(datasets) != list:
     datasets = [datasets]
   for ds in datasets:
-    if ds.startswith('comb_nlpcc_'):
-      count = ds.split('_')[-1]
-      processor = PROCESSORS[args.task_name]['comb_nlpcc_fs'](count, args.seed)
-    elif ds.startswith('maj_twitter_bulk_emb-'):
-      neighbours = int(ds.split('-')[1])
-      variant = ds.split('-')[2]
-      processor = PROCESSORS[args.task_name]['maj_twitter_bulk_emb'](neighbours, variant)
-    elif ds.startswith('maj_twitter_v2_bulk_emb-'):
-      neighbours = int(ds.split('-')[1])
-      variant = ds.split('-')[2]
-      processor = PROCESSORS[args.task_name]['maj_twitter_v2_bulk_emb'](neighbours, variant, 2)
-    elif ds.startswith('maj_twitter_bulk_'):
-      count = int(ds.split('_')[-1])
-      processor = PROCESSORS[args.task_name]['maj_twitter_bulk'](count, args.seed)
-    elif ds.startswith('maj_twitter_tfidf_'):
-      count = int(ds.split('_')[-1])
-      processor = PROCESSORS[args.task_name]['maj_twitter_tfidf'](count, args.seed)
-    elif ds.startswith('nusax_'):
-      lang = '_'.join(ds.split('_')[1:])
-      processor = PROCESSORS[args.task_name]['nusax'](lang)
-    elif ds.startswith('twitter_wiki_cont_3_part'):
-      part = int(ds.split('_')[-1])
-      processor = PROCESSORS[args.task_name]['twitter_wiki_cont_3'](part)
-    elif ds.startswith('xstance_'):
-      lang = ds.split('_')[-1]
-      processor = PROCESSORS[args.task_name]['xstance'](lang)
-    elif ds.startswith('zh_'):
-      act_ds = ds.split('_')[-1]
-      processor = PROCESSORS[args.task_name]['zh'](act_ds)
-    else:
-      processor = PROCESSORS[args.task_name][ds]()
+    processor = get_processor(ds, args.task_name, args.seed)
     labels = processor.get_labels()
     for label in labels:
       lab_tok = tokenizer.encode(label, add_special_tokens=False, return_tensors='pt').to(model.device)
@@ -508,12 +518,12 @@ def compute_metrics(preds, labels, topics, tokenizer):
   unique_topics, topics_mapping = np.unique(topics, axis=0, return_inverse=True)
   labels_order = list(set(labels))
   scores['labels_order'] = labels_order
-  for i, topic in enumerate(unique_topics):
-    t_name = tokenizer.convert_tokens_to_string( tokenizer.convert_ids_to_tokens(topic)).strip('<pad>')
-    precision, recall, f1, support = precision_recall_fscore_support(labels[topics_mapping==i], preds[topics_mapping==i], average=None, labels=labels_order)
-    scores[f'{t_name}_precisions'] = precision
-    scores[f'{t_name}_recalls'] = recall
-    scores[f'{t_name}_f1s'] = f1
+  # for i, topic in enumerate(unique_topics):
+  #   t_name = tokenizer.convert_tokens_to_string( tokenizer.convert_ids_to_tokens(topic)).strip('<pad>')
+  #   precision, recall, f1, support = precision_recall_fscore_support(labels[topics_mapping==i], preds[topics_mapping==i], average=None, labels=labels_order)
+  #   scores[f'{t_name}_precisions'] = precision
+  #   scores[f'{t_name}_recalls'] = recall
+  #   scores[f'{t_name}_f1s'] = f1
   return scores
 
 
@@ -734,9 +744,9 @@ def train(args, train_dataset, ld_dataset, mlm_dataset, parallel_dataset, ud_dat
   torch.set_printoptions(precision=10)
   for _ in train_loop_iterator:
     if combined_train:
-      epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
+      epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True, mininterval=60)
     else:
-      epoch_iterator = tqdm(range(n_train_examples), desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True)
+      epoch_iterator = tqdm(range(n_train_examples), desc="Iteration", disable=args.local_rank not in [-1, 0], dynamic_ncols=True, mininterval=60)
     for step, batch in enumerate(epoch_iterator):
       if not combined_train:
         train_rand_id = random.random()
@@ -1152,37 +1162,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       eval_dataset = ConcatDataset(eval_datasets)
     else:
       eval_dataset = load_and_cache_examples(args, eval_task, dataset, tokenizer, split=split, lang2id=lang2id, evaluate=True)
-      if dataset.startswith('comb_nlpcc_'):
-        count = dataset.split('_')[-1]
-        processor = PROCESSORS[args.task_name]['comb_nlpcc_fs'](count, args.seed)
-      elif dataset.startswith('maj_twitter_bulk_emb-'):
-        neighbours = int(dataset.split('-')[1])
-        variant = dataset.split('-')[2]
-        processor = PROCESSORS[args.task_name]['maj_twitter_bulk_emb'](neighbours, variant)
-      elif dataset.startswith('maj_twitter_v2_bulk_emb-'):
-        neighbours = int(dataset.split('-')[1])
-        variant = dataset.split('-')[2]
-        processor = PROCESSORS[args.task_name]['maj_twitter_v2_bulk_emb'](neighbours, variant, 2)
-      elif dataset.startswith('maj_twitter_bulk_'):
-        count = int(dataset.split('_')[-1])
-        processor = PROCESSORS[args.task_name]['maj_twitter_bulk'](count, args.seed)
-      elif dataset.startswith('maj_twitter_tfidf_'):
-        count = int(dataset.split('_')[-1])
-        processor = PROCESSORS[args.task_name]['maj_twitter_tfidf'](count, args.seed)
-      elif dataset.startswith('nusax_'):
-        lang = '_'.join(dataset.split('_')[1:])
-        processor = PROCESSORS[args.task_name]['nusax'](lang)
-      elif dataset.startswith('twitter_wiki_cont_3_part'):
-        part = int(dataset.split('_')[-1])
-        processor = PROCESSORS[args.task_name]['twitter_wiki_cont_3'](part)
-      elif dataset.startswith('xstance_'):
-        lang = dataset.split('_')[-1]
-        processor = PROCESSORS[args.task_name]['xstance'](lang)
-      elif dataset.startswith('zh_'):
-        act_ds = dataset.split('_')[-1]
-        processor = PROCESSORS['stance']['zh'](act_ds)
-      else:
-        processor = PROCESSORS[args.task_name][dataset]()
+      processor = get_processor(dataset, args.task_name, args.seed)
       labels_list.extend(processor.get_labels())
 
     if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
@@ -1206,7 +1186,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
     preds = None
     out_label_ids = None
     sentences = None
-    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True):
+    for batch in tqdm(eval_dataloader, desc="Evaluating", dynamic_ncols=True, mininterval=30):
       model.eval()
       batch = tuple(t.to(args.device) for t in batch)
 
@@ -1236,13 +1216,19 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
         l_mask = batch[3] == -100
       nb_eval_steps += 1
       if preds is None:
-        preds = compute_preds(logits[~l_mask], batch_shifts, batch_ends).detach().cpu().numpy()
+        preds, high_mask = compute_preds(logits[~l_mask], batch_shifts, batch_ends, keep_only_high=args.keep_only_high_logits)
+        preds = preds.detach().cpu().numpy()
+        if args.keep_only_high_logits:
+          high_mask = high_mask.detach().cpu().numpy()
         topics = batch_topics.detach().cpu().numpy()
         out_label_ids = inputs["labels"][~l_mask].detach().cpu().numpy()
         if output_file:
           sentences = inputs["input_ids"].detach().cpu().numpy()
       else:
-        preds = np.append(preds, compute_preds(logits[~l_mask], batch_shifts, batch_ends).detach().cpu().numpy(), axis=0)
+        batch_preds, batch_high_mask = compute_preds(logits[~l_mask], batch_shifts, batch_ends, keep_only_high=args.keep_only_high_logits)
+        preds = np.append(preds, batch_preds.detach().cpu().numpy(), axis=0)
+        if args.keep_only_high_logits:
+          high_mask = np.append(high_mask, batch_high_mask.detach().cpu().numpy(), axis=0)
         topics = np.append(topics, batch_topics.detach().cpu().numpy(), axis=0)
         out_label_ids = np.append(out_label_ids, inputs["labels"][~l_mask].detach().cpu().numpy(), axis=0)
         if output_file:
@@ -1250,7 +1236,7 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
 
     eval_loss = eval_loss / nb_eval_steps
     # if args.output_mode == "classification":
-    #   preds = compute_preds(preds)
+    #   preds, high_mask = compute_preds(preds)
     #   # preds = np.argmax(preds, axis=1)
     # else:
     #   raise ValueError("No other `output_mode` for XNLI.")
@@ -1261,6 +1247,11 @@ def evaluate(args, model, tokenizer, split='train', dataset='arc', language='en'
       logger.info("***** Save prediction ******")
       print(f'output file: {output_file}')
       with open(output_file, 'w') as fout:
+        if args.keep_only_high_logits:
+          sentences = sentences[high_mask]
+          preds = preds[high_mask]
+          out_label_ids = out_label_ids[high_mask]
+          logger.info(f'Kept fraction = {sum(high_mask)/high_mask.shape[0]}')
         pad_token_id = tokenizer.pad_token_id
         sentences = sentences.astype(int).tolist()
         sentences = [[w for w in s if w != pad_token_id]for s in sentences]
@@ -1320,6 +1311,29 @@ def load_and_cache_examples(args, task, dataset, tokenizer, split='train', lang2
     count = int(dataset.split('_')[-1])
     processor = PROCESSORS[args.task_name]['maj_twitter_tfidf'](count, args.seed)
     dsname = f'{dataset}_{args.seed}'
+  elif dataset.startswith('maj_twitter_wiki_cont_emb-'):
+    neighbours = int(dataset.split('-')[1])
+    variant = dataset.split('-')[2]
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_emb'](neighbours, variant)
+  elif dataset.startswith('maj_twitter_wiki_cont_filt_rand'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_filt_rand'](count, args.seed)
+    dsname = f'{dataset}_{args.seed}'
+  elif dataset.startswith('maj_twitter_wiki_cont_class_filt_rand'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_class_filt_rand'](count, args.seed)
+    dsname = f'{dataset}_{args.seed}'
+  elif dataset.startswith('maj_twitter_wiki_cont_high_filt'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_high_filt'](count, args.seed)
+    dsname = f'{dataset}_{args.seed}'
+  elif dataset.startswith('maj_twitter_wiki_cont_manual'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_manual'](count, args.seed)
+    dsname = f'{dataset}_{args.seed}'
+  elif dataset.startswith('maj_twitter_wiki_cont_near_topics'):
+    count = int(dataset.split('_')[-1])
+    processor = PROCESSORS[args.task_name]['maj_twitter_wiki_cont_near_topics'](count)
   elif dataset.startswith('nusax_'):
     lang = '_'.join(dataset.split('_')[1:])
     processor = PROCESSORS[args.task_name]['nusax'](lang)
@@ -1826,6 +1840,8 @@ def main():
   parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the test set.")
   parser.add_argument("--do_predict", action="store_true", help="Whether to run prediction.")
   parser.add_argument("--do_predict_dev", action="store_true", help="Whether to run prediction.")
+  parser.add_argument("--keep_only_high_logits", action="store_true", help="Whether to only keep high logits")
+  parser.add_argument("--high_logits_value", type=float, default=2, help="value to be considered as high")
   parser.add_argument("--output_only_prediction", action="store_true", help="Do we omit the input during predictions")
   parser.add_argument("--output_gold", action="store_true", help="Do we output gold during predictions")
   parser.add_argument("--init_checkpoint", type=str, default=None, help="initial checkpoint for predicting the dev set")
@@ -2071,6 +2087,8 @@ def main():
       lang = 'en'
     elif train_ds.startswith('maj_twitter_tfidf_'):
       lang = 'en'
+    elif train_ds.startswith('maj_twitter_wiki_cont_emb-'):
+      lang = 'en'
     else:
       try:
         lang = PROCESSORS[args.task_name][train_ds].language
@@ -2095,6 +2113,8 @@ def main():
     elif pred_ds.startswith('nusax'):
       lang = '_'.join(pred_ds.split('_')[1:])
     elif pred_ds.startswith('twitter_wiki_cont_3'):
+      lang = 'en'
+    elif pred_ds.startswith('maj_twitter_wiki_cont_emb-'):
       lang = 'en'
     else:
       lang = PROCESSORS[args.task_name][pred_ds].language
@@ -2240,6 +2260,7 @@ def main():
 
   # Prediction
   if args.do_predict and args.local_rank in [-1, 0]:
+    logger.info(f'???: {args.model_name_or_path if args.model_name_or_path else best_checkpoint}')
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path if args.model_name_or_path else best_checkpoint, do_lower_case=args.do_lower_case)
     model = model_class.from_pretrained(best_checkpoint)
     model.to(args.device)
