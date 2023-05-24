@@ -2271,7 +2271,7 @@ def main():
       tsnan_model = None
     output_predict_file = os.path.join(args.output_dir, args.test_split + '_results.txt')
     total = total_correct = 0.0
-    with open(output_predict_file, 'a') as writer:
+    with open(output_predict_file, 'w') as writer:
       writer.write('======= Predict using the model from {} for {}:\n'.format(best_checkpoint, args.test_split))
       for language, ds in zip(args.predict_languages, args.predict_datasets):
         output_file = os.path.join(args.output_dir, 'test-{}.tsv'.format(language))
